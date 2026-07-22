@@ -14,24 +14,25 @@ a un Excel limpio, listo para conciliar.
 Soporta dos formas de cargar los datos: **Excel** (uso principal) o el
 **endpoint** del sistema del hospital.
 
+## Importante solo acepta archivos .xlsx
+
 ## Cómo inicializar el proyecto
 
 ```bash
-# 1. Crear el proyecto Laravel (si todavía no existe)
-composer create-project laravel/laravel unificacion-pagos
-cd unificacion-pagos
-composer require maatwebsite/excel
+# 1. Clonar el repositorio
+git clone https://github.com/BPalomba/unificacion-de-pagos.git
+cd unificacion-de-pagos
 
-# 2. Copiar los archivos de este paquete dentro del proyecto,
-#    respetando las mismas carpetas (config/, app/, database/,
-#    resources/, routes/). Fusionar carpeta por carpeta, no
-#    reemplazar "app/" entero para no perder los archivos base
-#    de Laravel (Providers, Controller.php, Models/User.php).
+# 2. Instalar las dependencias
+composer install
 
-# 3. Migrar la base de datos
+# 3. Generar la clave de la aplicación
+php artisan key:generate
+
+# 4. Migrar la base de datos
 php artisan migrate
 
-# 4. Levantar el servidor
+# 5. Levantar el servidor
 php artisan serve
 ```
 
@@ -42,10 +43,10 @@ Excel desde el navegador, o usar el comando de consola:
 php artisan pagos:unificar --source=excel --file="ruta/al/archivo.xlsx" --dry-run
 ```
 
-> Requisitos: PHP 8.3 (ojo con versiones más nuevas como 8.5: todavía no
-> son compatibles con las librerías que leen Excel).
+> Requisitos: PHP 8.3.
+> No es compatible con versiones superiores
 
-## Cómo funciona, brevemente
+## Cómo funciona
 
 1. **Normaliza** cada fila del Excel (montos, fechas, etc.) y calcula una
    "clave de negocio" que identifica que dos filas son del mismo
@@ -53,13 +54,9 @@ php artisan pagos:unificar --source=excel --file="ruta/al/archivo.xlsx" --dry-ru
 2. **Agrupa** las filas por esa clave. Si un grupo tiene una fila de
    cobertura y una de "Bono a Persona", las **unifica**, sumando los
    montos.
-3. Si además dos pares comparten exactamente el mismo número de
-   comprobante (por ejemplo, una orden de laboratorio con varios
-   análisis distintos bajo un mismo número), se **fusionan en una sola
-   fila** para no repetir el mismo comprobante en el resultado.
-4. Lo que no se puede unificar solo (por ejemplo, grupos con 3 o más
+3. Lo que no se puede unificar solo (por ejemplo, grupos con 3 o más
    filas) queda separado para **revisión manual**, sin tocarse.
-5. Todo esto primero se puede correr en modo **dry-run** (solo mostrar el
+4. Todo esto primero se puede correr en modo **dry-run** (solo mostrar el
    resultado, sin guardar nada), y recién después persistirse en la base.
-6. El resultado final se puede **descargar en un Excel** con todo ya
+5. El resultado final se puede **descargar en un Excel** con todo ya
    unificado.
