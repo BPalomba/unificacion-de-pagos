@@ -20,8 +20,8 @@ class PaymentNormalizer
     {
         $get = fn (string $key) => isset($raw[$key]) ? trim((string) $raw[$key]) : null;
 
-        $fecha = $get('fecha');
-        $hora = $get('hora');
+        $fecha = $this->normalizeFecha($raw['fecha'] ?? null);
+        $hora = $this->normalizeHora($raw['hora'] ?? null);
 
         $row = [
             'paciente' => $get('paciente'),
@@ -50,7 +50,7 @@ class PaymentNormalizer
             // que Laravel-Excel normaliza a "modicado_por". Aceptamos ambas
             // variantes por si la fuente cambia el nombre de la columna.
             'modificado_por' => $get('modicado_por') ?? $get('modificado_por'),
-            'fecha_mod' => $get('fecha_mod'),
+            'fecha_mod' => $this->normalizeFechaHoraTexto($raw['fecha_mod'] ?? null),
             'fac_num' => $get('fac_num'),
             'fac_num_manual' => $get('fac_num_manual'),
             'rec_nro' => $get('rec_nro'),
@@ -60,6 +60,197 @@ class PaymentNormalizer
         $row['business_key'] = $this->businessKey($row);
 
         return $row;
+    }
+
+    /**
+     * Normaliza la columna FECHA a texto "d/m/Y", sin importar si Excel
+     * la entregó como texto ("1/6/2026"), como objeto DateTime/Carbon,
+     * como número de serie de Excel, o como texto con formato distinto
+     * (ej. "2026-06-01" o "2026-06-01 00:00:00").
+     */
+    public function normalizeFecha(mixed $valor): ?string
+    {
+        if ($valor === null || $valor === '') {
+            return null;
+        }
+
+        if ($valor instanceof \DateTimeInterface) {
+            return $valor->format('j/n/Y');
+        }
+
+        if (is_int($valor) || is_float($valor)) {
+            return $this->excelSerialToDateTime((float) $valor)?->format('j/n/Y');
+        }
+
+        $texto = trim((string) $valor);
+        if ($texto === '') {
+            return null;
+        }
+
+        // Si es puramente numérico como texto (ej. "46174", o "46174,5"
+        // con coma decimal como devuelve Excel en configuración regional
+        // argentina), es un serial de Excel.
+        $textoNumerico = str_replace(',', '.', $texto);
+        if (is_numeric($textoNumerico)) {
+            $convertido = $this->excelSerialToDateTime((float) $textoNumerico)?->format('j/n/Y');
+            if ($convertido) {
+                return $convertido;
+            }
+        }
+
+        // Ya viene en formato d/m/Y o d-m-Y -> se normaliza el separador
+        if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/', $texto, $m)) {
+            return sprintf('%d/%d/%d', (int) $m[1], (int) $m[2], (int) $m[3]);
+        }
+
+        // Último intento: dejar que PHP interprete el string como fecha
+        // (cubre "2026-06-01", "2026-06-01 00:00:00", etc.)
+        $timestamp = strtotime($texto);
+        if ($timestamp !== false) {
+            return date('j/n/Y', $timestamp);
+        }
+
+        // No se pudo interpretar: se devuelve el texto crudo en vez de
+        // perderlo silenciosamente como null.
+        return $texto;
+    }
+
+    /**
+     * Igual que normalizeFecha, pero para la columna HORA -> "H:i:s".
+     */
+    public function normalizeHora(mixed $valor): ?string
+    {
+        if ($valor === null || $valor === '') {
+            return null;
+        }
+
+        if ($valor instanceof \DateTimeInterface) {
+            return $valor->format('H:i:s');
+        }
+
+        if (is_int($valor) || is_float($valor)) {
+            return $this->horaDesdeSerial((float) $valor);
+        }
+
+        $texto = trim((string) $valor);
+        if ($texto === '') {
+            return null;
+        }
+
+        // Serial de Excel guardado como texto (ej. "0.763888889" o, en
+        // configuración regional argentina, "0,763888889" con coma)
+        $textoNumerico = str_replace(',', '.', $texto);
+        if (is_numeric($textoNumerico)) {
+            $convertido = $this->horaDesdeSerial((float) $textoNumerico);
+            if ($convertido) {
+                return $convertido;
+            }
+        }
+
+        // Ya viene como "18:20:00" o "18:20"
+        if (preg_match('/^(\d{1,2}):(\d{2})(:(\d{2}))?$/', $texto, $m)) {
+            $h = str_pad($m[1], 2, '0', STR_PAD_LEFT);
+            $i = $m[2];
+            $s = $m[4] ?? '00';
+
+            return "{$h}:{$i}:{$s}";
+        }
+
+        // Viene con fecha y hora juntas (ej. "1899-12-30 18:20:00",
+        // "2026-06-01T18:20:00"): se extrae solo la parte de la hora
+        if (preg_match('/(\d{1,2}):(\d{2})(:(\d{2}))?/', $texto, $m)) {
+            $h = str_pad($m[1], 2, '0', STR_PAD_LEFT);
+            $i = $m[2];
+            $s = $m[4] ?? '00';
+
+            return "{$h}:{$i}:{$s}";
+        }
+
+        // Último intento con strtotime
+        $timestamp = strtotime($texto);
+        if ($timestamp !== false) {
+            return date('H:i:s', $timestamp);
+        }
+
+        return $texto;
+    }
+
+    /**
+     * Normaliza columnas que combinan fecha+hora en un solo campo de
+     * texto (como "FECHA MOD"), a "d/m/Y H:i:s". Acepta los mismos
+     * formatos que normalizeFecha/normalizeHora: texto, DateTime, o
+     * serial de Excel (con coma o punto decimal).
+     */
+    public function normalizeFechaHoraTexto(mixed $valor): ?string
+    {
+        if ($valor === null || $valor === '') {
+            return null;
+        }
+
+        if ($valor instanceof \DateTimeInterface) {
+            return $valor->format('d/m/Y H:i:s');
+        }
+
+        if (is_int($valor) || is_float($valor)) {
+            return $this->excelSerialToDateTime((float) $valor)?->format('d/m/Y H:i:s');
+        }
+
+        $texto = trim((string) $valor);
+        if ($texto === '') {
+            return null;
+        }
+
+        $textoNumerico = str_replace(',', '.', $texto);
+        if (is_numeric($textoNumerico)) {
+            $convertido = $this->excelSerialToDateTime((float) $textoNumerico)?->format('d/m/Y H:i:s');
+            if ($convertido) {
+                return $convertido;
+            }
+        }
+
+        // Ya viene como texto legible (ej. "12/6/2026 09:07"): se deja tal cual
+        return $texto;
+    }
+
+    /**
+     * Convierte un serial de Excel que representa una HORA a "H:i:s".
+     * Los seriales de hora "pura" son una fracción de día (0 a 1),
+     * pero si viene combinado con fecha (número grande), se toma
+     * igual solo la parte de la hora.
+     */
+    protected function horaDesdeSerial(float $serial): ?string
+    {
+        $fraccionDia = $serial - floor($serial);
+        $segundos = (int) round($fraccionDia * 86400);
+
+        // Corrige redondeos que empujan a 86400 (medianoche del día siguiente)
+        if ($segundos >= 86400) {
+            $segundos -= 86400;
+        }
+
+        $h = intdiv($segundos, 3600);
+        $i = intdiv($segundos % 3600, 60);
+        $s = $segundos % 60;
+
+        return sprintf('%02d:%02d:%02d', $h, $i, $s);
+    }
+
+    /**
+     * Convierte un número de serie de fecha de Excel a DateTime.
+     * Excel cuenta los días desde el 30/12/1899.
+     */
+    protected function excelSerialToDateTime(float $serial): ?\DateTimeImmutable
+    {
+        try {
+            $base = new \DateTimeImmutable('1899-12-30');
+            $dias = (int) floor($serial);
+            $fraccionDia = $serial - $dias;
+            $segundos = (int) round($fraccionDia * 86400);
+
+            return $base->modify("+{$dias} days")->modify("+{$segundos} seconds");
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -91,8 +282,8 @@ class PaymentNormalizer
 
     /**
      * Combina FECHA ("1/6/2026") y HORA ("18:20:00") en un Carbon.
-     * Devuelve null si no se puede parsear (se loggea aparte para no
-     * frenar la importación completa por una fila mal formada).
+     * Devuelve null si no se puede parsear (no frena la importación
+     * completa por una fila mal formada).
      */
     public function parseFechaHora(?string $fecha, ?string $hora): ?Carbon
     {
@@ -106,8 +297,6 @@ class PaymentNormalizer
             return Carbon::createFromFormat('d/m/Y H:i:s', "{$fecha} {$hora}");
         } catch (\Throwable) {
             try {
-                // Fallback por si la fecha viene en formato Y-m-d (excel numérico
-                // convertido, u otra fuente distinta al Excel del hospital)
                 return Carbon::parse("{$fecha} {$hora}");
             } catch (\Throwable) {
                 return null;
@@ -151,8 +340,6 @@ class PaymentNormalizer
         $sinSufijo = substr($numero, 0, -1);
 
         if (! preg_match('/^(.*?)(\d{14})$/', $sinSufijo, $m)) {
-            // Tiene sufijo C/P/S pero no el patrón de timestamp de 14
-            // dígitos delante (formato antiguo/otro módulo)
             return ['base' => null, 'timestamp' => null, 'suffix' => $suffix];
         }
 
