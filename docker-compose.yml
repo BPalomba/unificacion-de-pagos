@@ -1,0 +1,20 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Monta el código del proyecto para que los cambios se vean sin
+      # reconstruir la imagen (desarrollo)
+      - .:/var/www/html
+      # Vendor queda en un volumen aparte para no pisar lo instalado
+      # dentro del contenedor con una carpeta vacía del host
+      - vendor:/var/www/html/vendor
+    environment:
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/var/www/html/database/database.sqlite
+
+volumes:
+  vendor:
