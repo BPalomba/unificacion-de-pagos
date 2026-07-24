@@ -23,24 +23,38 @@ Soporta dos formas de cargar los datos: **Excel** (uso principal) o el
 git clone https://github.com/BPalomba/unificacion-de-pagos.git
 cd unificacion-de-pagos
 
-# 2. Instalar las dependencias
-composer install
+# 2. Copiar las variables de entorno
+cp .env.example .env
 
-# 3. Generar la clave de la aplicación
-php artisan key:generate
+# 3. Levantar todo con Docker (instala dependencias, genera la key,
+#    crea la base SQLite y corre las migraciones automáticamente)
+docker compose up -d --build
 
-# 4. Migrar la base de datos
-php artisan migrate
-
-# 5. Levantar el servidor
-php artisan serve
+# 4. Ver los logs la primera vez (para confirmar que terminó bien)
+docker compose logs -f app
 ```
 
-Después, entrar a `http://127.0.0.1:8000/pagos/unificacion` para subir el
-Excel desde el navegador, o usar el comando de consola:
+La app queda corriendo en http://localhost:8000,
+y la pantalla de carga en http://localhost:8000/pagos/unificacion
+
+Comandos utiles
 
 ```bash
-php artisan pagos:unificar --source=excel --file="ruta/al/archivo.xlsx" --dry-run
+bash
+# Correr el comando de unificación por consola, dentro del contenedor
+docker compose exec app php artisan pagos:unificar --source=excel --file=/var/www/html/storage/app/pagos.xlsx --dry-run
+
+# Entrar a una shell del contenedor
+docker compose exec app bash
+
+# Ver logs en vivo
+docker compose logs -f app
+
+# Parar todo
+docker compose down
+
+# Levantar el proyecto
+docker compose up -d --build
 ```
 
 > Requisitos: PHP 8.3.
