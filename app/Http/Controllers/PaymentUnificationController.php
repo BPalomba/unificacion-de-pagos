@@ -34,47 +34,53 @@ class PaymentUnificationController extends Controller
         // Esto es ruta relativa
         $path = $request->file('archivo')->store('payments-uploads');
 
-        // Se obtiene la ruta absoluta
-        $fullPath = Storage::path($path);
 
-        // Se lee el archivo
-        $rawRows = (new ExcelPaymentSource($fullPath))->fetch();
+        try {
+            // Se obtiene la ruta absoluta
+            $fullPath = Storage::path($path);
 
-        // Se configura al normalizer
-        $normalizer = new PaymentNormalizer(config('payments.business_key_fields'));
+            // Se lee el archivo
+            $rawRows = (new ExcelPaymentSource($fullPath))->fetch();
 
-        // Se configura el servicio de desduplicado
-        $service = new PaymentDeduplicationService(
-            normalizer: $normalizer,
-            tipoAtencion: config('payments.tipo_atencion'),
-            toleranceSeconds: config('payments.numero_time_tolerance_seconds'),
-            estadoPriority: config('payments.estado_priority'),
-        );
+            // Se configura al normalizer
+            $normalizer = new PaymentNormalizer(config('payments.business_key_fields'));
 
-        // El servicio de desduplicado hace su magia
-        $analysis = $service->analyze($rawRows);
+            // Se configura el servicio de desduplicado
+            $service = new PaymentDeduplicationService(
+                normalizer: $normalizer,
+                tipoAtencion: config('payments.tipo_atencion'),
+                toleranceSeconds: config('payments.numero_time_tolerance_seconds'),
+                estadoPriority: config('payments.estado_priority'),
+            );
 
-        // Los datos resumidos
-        $resumen = [
-            'filas_leidas' => $rawRows->count(),
-            'unificados' => count($analysis['pairs']),
-            'standalone' => count($analysis['standalone']),
-            'revision' => count($analysis['review']),
-            'modo' => $validated['modo'],
-        ];
+            // El servicio de desduplicado hace su magia
+            $analysis = $service->analyze($rawRows);
 
-        // Si el modo era persistir, que el service lo persista y también devuelva el batchId
-        if ($validated['modo'] === 'persistir') {
-            $resultado = $service->persist($analysis, 'excel');
-            $resumen['batch_id'] = $resultado['batch_id'];
+            // Los datos resumidos
+            $resumen = [
+                'filas_leidas' => $rawRows->count(),
+                'unificados' => count($analysis['pairs']),
+                'standalone' => count($analysis['standalone']),
+                'revision' => count($analysis['review']),
+                'modo' => $validated['modo'],
+            ];
+
+            // Si el modo era persistir, que el service lo persista y también devuelva el batchId
+            if ($validated['modo'] === 'persistir') {
+                $resultado = $service->persist($analysis, 'excel');
+                $resumen['batch_id'] = $resultado['batch_id'];
+            }
+
+            // Se vuelve a la pantalla con el resumen, los primeros 20 pares analizados y los pares que necesitan review
+            return redirect()
+                ->route('payments.upload')
+                ->with('resumen', $resumen)
+                ->with('pares', array_slice($analysis['pairs'], 0, 20))
+                ->with('revision', $analysis['review']);
+        } finally {
+            // Se elimina el archivo temporal una vez que ya no hace falta
+            Storage::delete($path);
         }
-
-        // Se vuelve a la pantalla con el resumen, los primeros 20 pares analizados y los pares que necesitan review
-        return redirect()
-            ->route('payments.upload')
-            ->with('resumen', $resumen)
-            ->with('pares', array_slice($analysis['pairs'], 0, 20))
-            ->with('revision', $analysis['review']);
     }
 
     /**
