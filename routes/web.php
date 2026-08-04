@@ -4,10 +4,6 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PaymentUnificationController;
 
 
-Route::get('/', function () {
-    return view('welcome');
-});
-
 Route::get('/pagos/unificacion', [PaymentUnificationController::class, 'create'])
     ->name('payments.upload');
 

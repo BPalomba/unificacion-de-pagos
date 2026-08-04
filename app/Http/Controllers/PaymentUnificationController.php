@@ -21,6 +21,8 @@ class PaymentUnificationController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        // Se valida que el archivo exista y sea de extensión xlsx o xls
+        // Se valida que el modo sea alguno de los dos: dry_run o persistir
         $validated = $request->validate([
             'archivo' => ['required', 'file', 'mimes:xlsx,xls'],
             'modo' => ['required', 'in:dry_run,persistir'],
@@ -28,25 +30,31 @@ class PaymentUnificationController extends Controller
             'archivo' => 'archivo Excel',
         ]);
 
+        // Se guarda el archivo físicamente en su ruta por defecto, desde el directorio raíz: storage/app/private/payments-uploads
+        // Esto es ruta relativa
         $path = $request->file('archivo')->store('payments-uploads');
 
-        // Storage::path() resuelve la ruta real según el disco configurado
-        // (en Laravel 11 el disco "local" guarda en storage/app/private/...,
-        // no en storage/app/... como en versiones anteriores).
+        // Se obtiene la ruta absoluta
         $fullPath = Storage::path($path);
 
+        // Se lee el archivo
         $rawRows = (new ExcelPaymentSource($fullPath))->fetch();
 
+        // Se configura al normalizer
         $normalizer = new PaymentNormalizer(config('payments.business_key_fields'));
+
+        // Se configura el servicio de desduplicado
         $service = new PaymentDeduplicationService(
             normalizer: $normalizer,
-            tipoPaciente: config('payments.tipo_paciente'),
+            tipoPaciente: config('payments.tipo_atencion'),
             toleranceSeconds: config('payments.numero_time_tolerance_seconds'),
             estadoPriority: config('payments.estado_priority'),
         );
 
+        // El servicio de desduplicado hace su magia
         $analysis = $service->analyze($rawRows);
 
+        // Los datos resumidos
         $resumen = [
             'filas_leidas' => $rawRows->count(),
             'unificados' => count($analysis['pairs']),
@@ -55,11 +63,13 @@ class PaymentUnificationController extends Controller
             'modo' => $validated['modo'],
         ];
 
+        // Si el modo era persistir, que el service lo persista y también devuelva el batchId
         if ($validated['modo'] === 'persistir') {
             $resultado = $service->persist($analysis, 'excel');
             $resumen['batch_id'] = $resultado['batch_id'];
         }
 
+        // Se vuelve a la pantalla con el resumen, los primeros 20 pares analizados y los pares que necesitan review
         return redirect()
             ->route('payments.upload')
             ->with('resumen', $resumen)

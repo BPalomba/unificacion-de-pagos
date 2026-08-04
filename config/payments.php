@@ -29,12 +29,12 @@ return [
 
     /*
     |--------------------------------------------------------------------
-    | Valor de TIPO que identifica el lado "paciente" del par
+    | Valor de TIPO (de atencion) que identifica el lado "paciente" del par
     |--------------------------------------------------------------------
     | Cualquier otro valor de TIPO dentro del mismo grupo se interpreta
     | como el lado "cobertura / obra social".
     */
-    'tipo_paciente' => 'Bono a Persona',
+    'tipo_atencion' => 'Bono a Persona',
 
     /*
     |--------------------------------------------------------------------
