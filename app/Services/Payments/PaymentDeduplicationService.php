@@ -207,7 +207,7 @@ class PaymentDeduplicationService
                 ]);
 
                 // Actualiza el pago de cobertura y el pago de copago para dar el id de unificación
-                $paymentCobertura->update(['dedup_status' => 'unificado', 'unified_payment_id' => $unified->id]);
+                $paymentCobertura->update(['dedup_status' => 'unificado', 'unified_payment_id' => $unified->id, 'copago' => $pair['monto_bono_persona']]);
                 $paymentBono->update(['dedup_status' => 'unificado', 'unified_payment_id' => $unified->id]);
             }
 

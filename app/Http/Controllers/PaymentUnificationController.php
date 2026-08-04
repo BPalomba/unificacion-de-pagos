@@ -46,7 +46,7 @@ class PaymentUnificationController extends Controller
         // Se configura el servicio de desduplicado
         $service = new PaymentDeduplicationService(
             normalizer: $normalizer,
-            tipoPaciente: config('payments.tipo_atencion'),
+            tipoAtencion: config('payments.tipo_atencion'),
             toleranceSeconds: config('payments.numero_time_tolerance_seconds'),
             estadoPriority: config('payments.estado_priority'),
         );
