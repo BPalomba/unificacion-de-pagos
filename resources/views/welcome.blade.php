@@ -137,8 +137,8 @@
                                         <th>Hora</th>
                                         <th>Prestación</th>
                                         <th>Código</th>
-                                        <th>Tipo de bono</th>
-                                        <th class="text-end">Monto O.S</th>
+                                        <th>Tipo</th>
+                                        <th class="text-end">Precio</th>
                                         <th class="text-end">Copago</th>
                                         <th class="text-end">Total</th>
                                     </tr>
@@ -153,8 +153,8 @@
                                             <td>{{ $row['hora'] }}</td>
                                             <td>{{ $row['prestacion'] }}</td>
                                             <td>{{ $row['codigo'] }}</td>
-                                            <td>{{ $row['tipo_bono'] ?? '—' }}</td>
-                                            <td class="text-end">$ {{ number_format((float) $row['monto_os'], 2, ',', '.') }}</td>
+                                            <td>{{ $row['tipo'] ?? '—' }}</td>
+                                            <td class="text-end">$ {{ number_format((float) $row['precio'], 2, ',', '.') }}</td>
                                             <td class="text-end">$ {{ number_format((float) $row['copago'], 2, ',', '.') }}</td>
                                             <td class="text-end">$ {{ number_format((float) $row['total'], 2, ',', '.') }}</td>
                                         </tr>

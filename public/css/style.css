@@ -71,12 +71,15 @@ button {
 }
 
 .app-container {
-    max-width: 1180px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 28px;
     border-radius: 32px;
     background: rgba(255, 255, 255, 0.92);
     box-shadow: var(--shadow);
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    min-width: 0;
 }
 
 .hero-card {
@@ -393,6 +396,23 @@ button {
     border: 1px solid rgba(15, 58, 120, 0.06);
     box-shadow: 0 20px 45px rgba(15, 58, 120, 0.06);
     padding: 26px;
+    min-width: 0;
+}
+
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.table-responsive table {
+    width: 100%;
+    min-width: 100%;
+    border-collapse: collapse;
+}
+
+.table-responsive th,
+.table-responsive td {
+    white-space: normal;
 }
 
 .table-card-header {
