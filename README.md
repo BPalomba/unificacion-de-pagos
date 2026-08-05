@@ -38,9 +38,8 @@ En el sistema de facturación del hospital, cuando un paciente paga una prestaci
 
 Este proyecto detecta esos pares duplicados, los **unifica en un solo registro consolidado** (sin perder ninguno de los comprobantes originales), y permite exportar el resultado a un Excel limpio, listo para conciliar.
 
-Soporta dos formas de cargar los datos:
+Carga de datos:
 - 📊 **Excel** (uso principal — `.xlsx` únicamente)
-- 🔌 El **endpoint** del sistema del hospital
 
 > ⚠️ **Importante:** solo se aceptan archivos `.xlsx`. Archivos `.xls` (formato antiguo) o `.csv` no están soportados por ahora.
 
