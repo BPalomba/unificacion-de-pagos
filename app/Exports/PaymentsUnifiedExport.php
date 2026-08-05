@@ -3,21 +3,21 @@
 namespace App\Exports;
 
 use App\Services\Payments\UnifiedPaymentsQuery;
-use Illuminate\Support\Collection;
-use Maatwebsite\Excel\Concerns\FromCollection;
+use Generator;
+use Maatwebsite\Excel\Concerns\FromGenerator;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 
-class PaymentsUnifiedExport implements FromCollection, WithHeadings, WithMapping, ShouldAutoSize
+class PaymentsUnifiedExport implements FromGenerator, WithHeadings, WithMapping, ShouldAutoSize
 {
     public function __construct(protected ?string $batchId = null)
     {
     }
 
-    public function collection(): Collection
+    public function generator(): Generator
     {
-        return (new UnifiedPaymentsQuery())->rows($this->batchId);
+        return (new UnifiedPaymentsQuery())->generator($this->batchId);
     }
 
     public function headings(): array

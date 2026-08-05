@@ -4,7 +4,9 @@ namespace App\Services\Payments;
 
 use App\Models\Payment;
 use App\Models\UnifiedPayment;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Generator;
 
 /**
  * Arma la lista de "pagos ya procesados" (unificados + standalone) en un
@@ -17,9 +19,56 @@ class UnifiedPaymentsQuery
     /**
      * @param  array{medico?: string, paciente?: string, cobertura?: string, periodo?: string}  $filtros
      */
-    public function rows(?string $batchId = null, array $filtros = []): Collection
+    public function rows(?string $batchId = null, array $filtros = [], ?int $limit = null): Collection
     {
-        $unificados = UnifiedPayment::query()
+        return collect($this->rowsGenerator($batchId, $filtros, $limit))->values();
+    }
+
+    public function generator(?string $batchId = null, array $filtros = []): Generator
+    {
+        yield from $this->rowsGenerator($batchId, $filtros, null);
+    }
+
+    protected function rowsGenerator(?string $batchId = null, array $filtros = [], ?int $limit = null): Generator
+    {
+        $unificados = $this->unifiedQuery($batchId, $filtros)->cursor();
+        $standalone = $this->standaloneQuery($batchId, $filtros)->cursor();
+
+        $uIterator = $unificados->getIterator();
+        $sIterator = $standalone->getIterator();
+
+        $uIterator->rewind();
+        $sIterator->rewind();
+
+        $count = 0;
+
+        while (($uIterator->valid() || $sIterator->valid()) && ($limit === null || $count < $limit)) {
+            $u = $uIterator->valid() ? $uIterator->current() : null;
+            $s = $sIterator->valid() ? $sIterator->current() : null;
+
+            if ($u !== null && $s !== null) {
+                if ($u->fecha_hora >= $s->fecha_hora) {
+                    yield $this->desdeUnificado($u);
+                    $uIterator->next();
+                } else {
+                    yield $this->desdeStandalone($s);
+                    $sIterator->next();
+                }
+            } elseif ($u !== null) {
+                yield $this->desdeUnificado($u);
+                $uIterator->next();
+            } else {
+                yield $this->desdeStandalone($s);
+                $sIterator->next();
+            }
+
+            $count++;
+        }
+    }
+
+    protected function unifiedQuery(?string $batchId = null, array $filtros = []): Builder
+    {
+        return UnifiedPayment::query()
             ->with(['paymentCobertura', 'paymentBonoPersona'])
             ->when($batchId, fn ($q) => $q->where('import_batch_id', $batchId))
             ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->where('medico', 'like', "%{$v}%"))
@@ -28,10 +77,12 @@ class UnifiedPaymentsQuery
             ->when($filtros['periodo'] ?? null, fn ($q, $v) => $q->whereRaw(
                 "strftime('%Y-%m', fecha_hora) = ?", [$v]
             ))
-            ->get()
-            ->map(fn (UnifiedPayment $u) => $this->desdeUnificado($u));
+            ->orderByDesc('fecha_hora');
+    }
 
-        $standalone = Payment::query()
+    protected function standaloneQuery(?string $batchId = null, array $filtros = []): Builder
+    {
+        return Payment::query()
             ->where('dedup_status', 'standalone')
             ->when($batchId, fn ($q) => $q->where('import_batch_id', $batchId))
             ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->where('medico', 'like', "%{$v}%"))
@@ -40,12 +91,7 @@ class UnifiedPaymentsQuery
             ->when($filtros['periodo'] ?? null, fn ($q, $v) => $q->whereRaw(
                 "strftime('%Y-%m', fecha_hora) = ?", [$v]
             ))
-            ->get()
-            ->map(fn (Payment $p) => $this->desdeStandalone($p));
-
-        return $unificados->concat($standalone)
-            ->sortByDesc(fn ($row) => $row['orden'])
-            ->values();
+            ->orderByDesc('fecha_hora');
     }
 
     protected function desdeUnificado(UnifiedPayment $u): array

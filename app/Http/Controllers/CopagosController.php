@@ -23,10 +23,10 @@ class CopagosController extends Controller
     {
         $filtros = $request->only(['medico', 'paciente', 'cobertura', 'periodo']);
 
-        $rows = (new UnifiedPaymentsQuery())->rows(null, $filtros);
+        $rows = (new UnifiedPaymentsQuery())->rows(null, $filtros, 50);
 
         return view('welcome', [
-            'rows' => $rows->take(50), // "últimos copagos": se limita a los 50 más recientes
+            'rows' => $rows,
             'filtros' => $filtros,
         ]);
     }

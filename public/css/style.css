@@ -254,16 +254,25 @@ button {
 }
 
 .action-button {
-    width: 52px;
-    height: 52px;
+    min-height: 52px;
     border: 0;
     border-radius: 18px;
     background: linear-gradient(135deg, #f7d57b 0%, #d9a819 100%);
     box-shadow: 0 12px 24px rgba(199, 143, 20, 0.22);
     color: #2e1d00;
-    display: grid;
-    place-items: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 18px;
+    white-space: nowrap;
     transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.action-button p {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
 }
 
 .action-button:hover {
@@ -272,7 +281,11 @@ button {
 }
 
 .clear-filters-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 146px;
+    height: 52px;
     padding: 0 18px;
     border: none;
     border-radius: 18px;
@@ -649,11 +662,29 @@ button {
 
 .action-button {
 
-    padding: 0;
+    display: inline-flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    gap: 10px;
+
+    padding: 0 18px;
+
+    min-height: 52px;
 
     border: none;
 
     background: transparent;
+
+    color: inherit;
+
+}
+
+.action-button p {
+
+    margin: 0;
 
 }
 
@@ -662,7 +693,7 @@ button {
 
     color: #222;
 
-    font-size: 31px;
+    font-size: 22px;
 
     cursor: pointer;
 

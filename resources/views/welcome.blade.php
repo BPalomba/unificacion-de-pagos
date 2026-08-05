@@ -94,10 +94,15 @@
                         <button type="button" class="action-button" title="Nuevo registro" data-bs-toggle="modal"
                             data-bs-target="#modalNuevoRegistro">
                             <i class="bi bi-file-earmark-plus"></i>
+                            <p>Nuevo Registro</p>
                         </button>
-                        <a href="{{ route('copagos.export') }}" class="action-button" title="Descargar reporte">
-                            <i class="bi bi-download"></i>
-                        </a>
+                        @if (isset($resumen['batch_id']))
+                            <a href="{{ route('copagos.export', ['batch_id' => $resumen['batch_id']]) }}"
+                                class="action-button" title="Descargar reporte">
+                                <i class="bi bi-download"></i>
+                                <p>Descargar Reporte</p>
+                            </a>
+                        @endif
                         <button type="submit" class="search-button" title="Buscar">
                             <i class="bi bi-search"></i>
                         </button>
