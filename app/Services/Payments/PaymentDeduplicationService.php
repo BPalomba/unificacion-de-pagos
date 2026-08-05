@@ -13,7 +13,7 @@ class PaymentDeduplicationService
 {
     public function __construct(
         protected PaymentNormalizer $normalizer,
-        protected string $tipoPaciente,
+        protected string $tipoAtencion,
         protected int $toleranceSeconds,
         protected array $estadoPriority,
     ) {
@@ -36,30 +36,39 @@ class PaymentDeduplicationService
             ->filter(fn (array $row) => filled($row['paciente']))
             ->values();
 
+        // Colección de las filas que quedaron agrupadas por tener misma business_key
         $groups = $normalized->groupBy('business_key');
 
         $pairs = [];
         $standalone = [];
         $review = [];
 
+        // Por cada grupo encontrado, tomar el grupo y la business key
         foreach ($groups as $businessKey => $group) {
+
+            // Si el grupo era de 1 fila, es una fila standalone, pasamos al siguiente grupo
             if ($group->count() === 1) {
                 $standalone[] = $group->first();
                 continue;
             }
 
-            $bono = $group->filter(fn ($r) => $r['tipo'] === $this->tipoPaciente)->values();
-            $cobertura = $group->filter(fn ($r) => $r['tipo'] !== $this->tipoPaciente)->values();
+            // Las filas del grupo que coinciden con tipoAtencion que marca un duplicado (Bono a Persona)
+            $bono = $group->filter(fn ($r) => $r['tipo'] === $this->tipoAtencion)->values();
 
+            // Las filas del grupo que NO coinciden con el tipoAtencion (Bono a Persona). Se consideran cobertura de la OS
+            $cobertura = $group->filter(fn ($r) => $r['tipo'] !== $this->tipoAtencion)->values();
+
+            // Si hay más de 2 filas en el grupo, de las cuales 1 es bono y la otra es cobertura de la OS, se unifica y pasa al siguiente grupo
             if ($group->count() === 2 && $bono->count() === 1 && $cobertura->count() === 1) {
                 $pairs[] = $this->buildPair($cobertura->first(), $bono->first(), (string) $businessKey);
                 continue;
             }
 
+            // Todo lo que no cumplió con ninguno de los 2 casos se considera para review
             $review[] = [
                 'business_key' => (string) $businessKey,
                 'filas' => $group->all(),
-                'motivo' => $this->motivoRevision($group, $bono, $cobertura),
+                'motivo' => $this->motivoRevision($group, $bono, $cobertura), // Motivo de revisión para presentar al usuario
             ];
         }
 
@@ -153,19 +162,26 @@ class PaymentDeduplicationService
      */
     public function persist(array $analysis, string $source, ?string $importBatchId = null): array
     {
+        // Si no le pasamos batchId, le asignamos uno
         $importBatchId ??= (string) Str::uuid();
 
         DB::transaction(function () use ($analysis, $source, $importBatchId) {
+
+            // Por cada standalone, crea una fila en la db con estado "standalone"
             foreach ($analysis['standalone'] as $row) {
                 $this->createPayment($row, $source, $importBatchId, [
                     'dedup_status' => 'standalone',
                 ]);
             }
 
+            // Por cada pareja duplicada, las unifica
             foreach ($analysis['pairs'] as $pair) {
+                // Guardamos el pago de la OS del par
                 $paymentCobertura = $this->createPayment($pair['cobertura'], $source, $importBatchId);
+                // Guardamos el copago del par
                 $paymentBono = $this->createPayment($pair['bono'], $source, $importBatchId);
 
+                // Crea un registro en la tabla UnifiedPayment con los datos combinados
                 $unified = UnifiedPayment::create([
                     'import_batch_id' => $importBatchId,
                     'paciente' => $pair['cobertura']['paciente'],
@@ -190,11 +206,13 @@ class PaymentDeduplicationService
                     'confianza' => $pair['confianza'],
                 ]);
 
-                $paymentCobertura->update(['dedup_status' => 'unificado', 'unified_payment_id' => $unified->id]);
+                // Actualiza el pago de cobertura y el pago de copago para dar el id de unificación
+                $paymentCobertura->update(['dedup_status' => 'unificado', 'unified_payment_id' => $unified->id, 'copago' => $pair['monto_bono_persona']]);
                 $paymentBono->update(['dedup_status' => 'unificado', 'unified_payment_id' => $unified->id]);
             }
 
             foreach ($analysis['review'] as $grupo) {
+                // Crea un registro en la tabla PaymentReviewGroup con los que quedaron para review
                 $reviewGroup = PaymentReviewGroup::create([
                     'import_batch_id' => $importBatchId,
                     'business_key' => $grupo['business_key'],
@@ -202,6 +220,7 @@ class PaymentDeduplicationService
                     'cantidad_filas' => count($grupo['filas']),
                 ]);
 
+                // Crea un pago por cada fila a revisar
                 foreach ($grupo['filas'] as $row) {
                     $this->createPayment($row, $source, $importBatchId, [
                         'dedup_status' => 'revision',
