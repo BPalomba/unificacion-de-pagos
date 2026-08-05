@@ -196,22 +196,8 @@
                                 required>
                         </div>
 
-                        <div class="mb-2">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="modo" id="modoDryRun" value="dry_run"
-                                    checked>
-                                <label class="form-check-label" for="modoDryRun">
-                                    Dry-run (solo analizar, no guardar)
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="modo" id="modoPersistir"
-                                    value="persistir">
-                                <label class="form-check-label" for="modoPersistir">
-                                    Persistir en la base de datos
-                                </label>
-                            </div>
-                        </div>
+                        <input type="hidden" name="modo" value="persistir">
+                        
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
