@@ -33,33 +33,46 @@ class UnifiedPaymentsQuery
     {
         $unificados = $this->unifiedQuery($batchId, $filtros)->cursor();
         $standalone = $this->standaloneQuery($batchId, $filtros)->cursor();
+        $revision = $this->revisionQuery($batchId, $filtros)->cursor();
 
         $uIterator = $unificados->getIterator();
         $sIterator = $standalone->getIterator();
+        $rIterator = $revision->getIterator();
 
         $uIterator->rewind();
         $sIterator->rewind();
+        $rIterator->rewind();
 
         $count = 0;
 
-        while (($uIterator->valid() || $sIterator->valid()) && ($limit === null || $count < $limit)) {
+        while (($uIterator->valid() || $sIterator->valid() || $rIterator->valid()) && ($limit === null || $count < $limit)) {
             $u = $uIterator->valid() ? $uIterator->current() : null;
             $s = $sIterator->valid() ? $sIterator->current() : null;
+            $r = $rIterator->valid() ? $rIterator->current() : null;
 
-            if ($u !== null && $s !== null) {
-                if ($u->fecha_hora >= $s->fecha_hora) {
-                    yield $this->desdeUnificado($u);
-                    $uIterator->next();
-                } else {
-                    yield $this->desdeStandalone($s);
-                    $sIterator->next();
+            // Determina cuál tiene la fecha más antigua
+            $minItem = null;
+            $minDate = null;
+
+            foreach (['u' => $u, 's' => $s, 'r' => $r] as $key => $item) {
+                if ($item !== null) {
+                    $itemDate = $item->fecha_hora;
+                    if ($minDate === null || $itemDate >= $minDate) {
+                        $minDate = $itemDate;
+                        $minItem = $key;
+                    }
                 }
-            } elseif ($u !== null) {
+            }
+
+            if ($minItem === 'u') {
                 yield $this->desdeUnificado($u);
                 $uIterator->next();
-            } else {
+            } elseif ($minItem === 's') {
                 yield $this->desdeStandalone($s);
                 $sIterator->next();
+            } elseif ($minItem === 'r') {
+                yield $this->desdeRevision($r);
+                $rIterator->next();
             }
 
             $count++;
@@ -84,6 +97,20 @@ class UnifiedPaymentsQuery
     {
         return Payment::query()
             ->where('dedup_status', 'standalone')
+            ->when($batchId, fn ($q) => $q->where('import_batch_id', $batchId))
+            ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->where('medico', 'like', "%{$v}%"))
+            ->when($filtros['paciente'] ?? null, fn ($q, $v) => $q->where('paciente', 'like', "%{$v}%"))
+            ->when($filtros['cobertura'] ?? null, fn ($q, $v) => $q->where('cobertura', 'like', "%{$v}%"))
+            ->when($filtros['periodo'] ?? null, fn ($q, $v) => $q->whereRaw(
+                "strftime('%Y-%m', fecha_hora) = ?", [$v]
+            ))
+            ->orderByDesc('fecha_hora');
+    }
+
+    protected function revisionQuery(?string $batchId = null, array $filtros = []): Builder
+    {
+        return Payment::query()
+            ->where('dedup_status', 'revision')
             ->when($batchId, fn ($q) => $q->where('import_batch_id', $batchId))
             ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->where('medico', 'like', "%{$v}%"))
             ->when($filtros['paciente'] ?? null, fn ($q, $v) => $q->where('paciente', 'like', "%{$v}%"))
@@ -171,6 +198,45 @@ class UnifiedPaymentsQuery
             'numero_bono_persona' => null,
             'monto_bono_persona' => null,
             'estado_unificacion' => 'Individual (sin duplicado)',
+            'orden' => $p->fecha_hora,
+        ];
+    }
+
+    protected function desdeRevision(Payment $p): array
+    {
+        return [
+            'paciente' => $p->paciente,
+            'dni' => $p->dni,
+            'fecha' => $p->fecha,
+            'hora' => $p->hora,
+            'departamento' => $p->departamento,
+            'especialidad' => $p->especialidad,
+            'medico' => $p->medico,
+            'estado_turno' => $p->estado_turno,
+            'cobertura' => $p->cobertura,
+            'numerobeneficiario' => $p->numerobeneficiario,
+            'numero' => $p->numero,
+            'numero_autorizacion' => $p->numero_autorizacion,
+            'prestacion' => $p->prestacion,
+            'detalle' => $p->detalle,
+            'codigo' => $p->codigo,
+            'cantidad' => $p->cantidad,
+            'precio' => $p->precio,
+            'copago' => $p->copago,
+            'monto_os' => $p->tipo === 'Bono a Persona' ? 0 : $p->total,
+            'total' => $p->total,
+            'estado' => $p->estado,
+            'tipo' => $p->tipo,
+            'tipo_bono' => $p->tipo === 'Bono a Persona' ? 'Bono a Persona' : null,
+            'modificado_por' => $p->modificado_por,
+            'fecha_mod' => $p->fecha_mod,
+            'fac_num' => $p->fac_num,
+            'fac_num_manual' => $p->fac_num_manual,
+            'rec_nro' => $p->rec_nro,
+            'centro_costo' => $p->centro_costo,
+            'numero_bono_persona' => null,
+            'monto_bono_persona' => null,
+            'estado_unificacion' => 'A revisar',
             'orden' => $p->fecha_hora,
         ];
     }
