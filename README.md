@@ -29,9 +29,6 @@ cp .env.example .env
 # 3. Levantar todo con Docker (instala dependencias, genera la key,
 #    crea la base SQLite y corre las migraciones automáticamente)
 docker compose up -d --build
-
-# 4. Ver los logs la primera vez (para confirmar que terminó bien)
-docker compose logs -f app
 ```
 
 La app queda corriendo en http://localhost:8000,
