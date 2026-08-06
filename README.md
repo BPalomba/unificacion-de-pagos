@@ -75,9 +75,8 @@ Carga de datos:
 
 - ✅ Detección automática de pares duplicados (cobertura + Bono a Persona)
 - ✅ Unificación en un solo registro, sumando montos y sin perder trazabilidad de los comprobantes originales
-- ✅ Modo **dry-run**: analiza y muestra el resultado sin escribir nada en la base
 - ✅ Cola de **revisión manual** para los casos ambiguos (3+ registros, combinaciones inesperadas de TIPO)
-- ✅ Carga por **Excel** o por el **endpoint** del sistema del hospital
+- ✅ Carga por **Excel** de reportes del hospital
 - ✅ Panel web con filtros (médico, paciente, obra social, período) y tabla paginada
 - ✅ Exportación a Excel del resultado ya unificado
 - ✅ Comando Artisan para correrlo desde consola / automatizarlo
