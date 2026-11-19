@@ -9,6 +9,10 @@
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-privado-lightgrey)](#-licencia)
 
+### 🌐 [Ver la demo en vivo → unificacion-pagos.vercel.app](https://unificacion-pagos.vercel.app)
+
+<sub>Demo / prueba de concepto pública: usar solo Excels con datos de prueba o anonimizados.</sub>
+
 [Reportar un bug](../../issues) · [Pedir una funcionalidad](../../issues)
 
 </div>
@@ -146,6 +150,8 @@ php artisan serve
 ---
 
 ## ☁️ Despliegue en Vercel
+
+**Producción:** https://unificacion-pagos.vercel.app
 
 La app se despliega como contenedor en Vercel con FrankenPHP, siguiendo [la guía oficial](https://vercel.com/kb/guide/laravel-php-with-docker). Los archivos que usa son:
 

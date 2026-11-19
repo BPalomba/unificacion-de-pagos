@@ -1,0 +1,24 @@
+# Lo que NO se sube a Vercel con `vercel deploy`.
+# La imagen se construye en Vercel con Dockerfile.vercel (que hace su propio composer install).
+.git
+vendor
+node_modules
+tests
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/app/private/*
+bootstrap/cache/*.php
+
+# Secretos: Vercel inyecta las variables de entorno al arrancar
+.env
+.env.*
+!.env.example
+
+# La base SQLite local (puede tener datos reales)
+database/database.sqlite
+
+.phpunit.result.cache
+.idea
+.vscode
