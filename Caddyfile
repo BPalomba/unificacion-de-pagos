@@ -1,0 +1,9 @@
+# Vercel indica el puerto en la variable PORT (por defecto 80)
+:{$PORT:80} {
+	root * /app/public
+	encode zstd gzip
+
+	php_server {
+		try_files {path} index.php
+	}
+}

@@ -23,6 +23,7 @@
 - [Cómo funciona](#-cómo-funciona)
 - [Stack tecnológico](#-stack-tecnológico)
 - [Instalación](#-instalación)
+- [Despliegue en Vercel](#️-despliegue-en-vercel)
 - [Comandos útiles](#-comandos-útiles)
 - [Estructura del proyecto](#-estructura-del-proyecto)
 - [Solución de problemas](#-solución-de-problemas)
@@ -141,6 +142,53 @@ php artisan serve
 ```
 
 </details>
+
+---
+
+## ☁️ Despliegue en Vercel
+
+La app se despliega como contenedor en Vercel con FrankenPHP, siguiendo [la guía oficial](https://vercel.com/kb/guide/laravel-php-with-docker). Los archivos que usa son:
+
+| Archivo | Para qué |
+|---|---|
+| `Dockerfile.vercel` | Imagen de producción (FrankenPHP + PHP 8.3). El `Dockerfile` normal sigue siendo el de desarrollo. |
+| `Caddyfile` | Sirve solo `public/` y escucha en el puerto `PORT` que pasa Vercel. |
+| `vercel.json` | Declara el servicio contenedor y manda todas las rutas a él. |
+| `.dockerignore` | Deja afuera `.env`, `vendor`, la base SQLite local, etc. |
+
+> ⚠️ **En Vercel el disco no persiste**, así que SQLite no sirve: los datos se perderían. Hace falta una base externa, PostgreSQL (por ejemplo, Neon desde el Marketplace de Vercel) o MySQL. La imagen ya trae `pdo_pgsql` y `pdo_mysql`.
+
+### Pasos
+
+```bash
+npm install -g vercel
+vercel login
+vercel link                       # crea/vincula el proyecto en Vercel
+
+# Variables de entorno (repetir para Production / Preview según corresponda)
+php artisan key:generate --show   # copiar el valor base64:...
+vercel env add APP_KEY
+vercel env add APP_URL            # ej: https://tu-proyecto.vercel.app
+vercel env add DB_CONNECTION      # pgsql o mysql
+vercel env add DB_URL             # cadena de conexión completa de la base externa
+                                  # (o DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD)
+
+# Migraciones: se corren UNA vez desde tu máquina contra la base externa,
+# nunca al arrancar el contenedor
+DB_CONNECTION=pgsql DB_URL="postgres://..." php artisan migrate --force
+
+# Desplegar
+vercel deploy          # preview
+vercel deploy --prod   # producción
+```
+
+Las sesiones se guardan en la base (`SESSION_DRIVER=database`) porque el resumen de la carga se muestra después de un redirect. Los logs salen por `stderr` y se ven en *Runtime Logs* de Vercel.
+
+### Limitaciones a tener en cuenta
+
+- **Vercel limita el cuerpo de cada request a 4.5 MB**: un Excel más grande va a fallar con un error 413.
+- Cada request tiene un tiempo máximo de ejecución, así que los archivos muy grandes pueden cortarse a mitad de camino (ver el Roadmap: mover la persistencia a un Job).
+- Para probar la imagen localmente: `docker build -f Dockerfile.vercel -t unificacion-vercel .`
 
 ---
 

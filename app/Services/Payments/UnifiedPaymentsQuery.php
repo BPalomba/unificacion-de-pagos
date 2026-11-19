@@ -81,44 +81,66 @@ class UnifiedPaymentsQuery
 
     protected function unifiedQuery(?string $batchId = null, array $filtros = []): Builder
     {
-        return UnifiedPayment::query()
-            ->with(['paymentCobertura', 'paymentBonoPersona'])
-            ->when($batchId, fn ($q) => $q->where('import_batch_id', $batchId))
-            ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->where('medico', 'like', "%{$v}%"))
-            ->when($filtros['paciente'] ?? null, fn ($q, $v) => $q->where('paciente', 'like', "%{$v}%"))
-            ->when($filtros['cobertura'] ?? null, fn ($q, $v) => $q->where('cobertura', 'like', "%{$v}%"))
-            ->when($filtros['periodo'] ?? null, fn ($q, $v) => $q->whereRaw(
-                "strftime('%Y-%m', fecha_hora) = ?", [$v]
-            ))
-            ->orderByDesc('fecha_hora');
+        return $this->aplicarFiltros(
+            UnifiedPayment::query()->with(['paymentCobertura', 'paymentBonoPersona']),
+            $batchId,
+            $filtros,
+        );
     }
 
     protected function standaloneQuery(?string $batchId = null, array $filtros = []): Builder
     {
-        return Payment::query()
-            ->where('dedup_status', 'standalone')
-            ->when($batchId, fn ($q) => $q->where('import_batch_id', $batchId))
-            ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->where('medico', 'like', "%{$v}%"))
-            ->when($filtros['paciente'] ?? null, fn ($q, $v) => $q->where('paciente', 'like', "%{$v}%"))
-            ->when($filtros['cobertura'] ?? null, fn ($q, $v) => $q->where('cobertura', 'like', "%{$v}%"))
-            ->when($filtros['periodo'] ?? null, fn ($q, $v) => $q->whereRaw(
-                "strftime('%Y-%m', fecha_hora) = ?", [$v]
-            ))
-            ->orderByDesc('fecha_hora');
+        return $this->aplicarFiltros(
+            Payment::query()->where('dedup_status', 'standalone'),
+            $batchId,
+            $filtros,
+        );
     }
 
     protected function revisionQuery(?string $batchId = null, array $filtros = []): Builder
     {
-        return Payment::query()
-            ->where('dedup_status', 'revision')
+        return $this->aplicarFiltros(
+            Payment::query()->where('dedup_status', 'revision'),
+            $batchId,
+            $filtros,
+        );
+    }
+
+    /**
+     * Filtros comunes a las tres consultas. Se evita SQL propio de un motor
+     * (antes se usaba strftime(), que solo existe en SQLite) para que funcione
+     * igual en SQLite, PostgreSQL y MySQL.
+     */
+    protected function aplicarFiltros(Builder $query, ?string $batchId, array $filtros): Builder
+    {
+        return $query
             ->when($batchId, fn ($q) => $q->where('import_batch_id', $batchId))
-            ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->where('medico', 'like', "%{$v}%"))
-            ->when($filtros['paciente'] ?? null, fn ($q, $v) => $q->where('paciente', 'like', "%{$v}%"))
-            ->when($filtros['cobertura'] ?? null, fn ($q, $v) => $q->where('cobertura', 'like', "%{$v}%"))
-            ->when($filtros['periodo'] ?? null, fn ($q, $v) => $q->whereRaw(
-                "strftime('%Y-%m', fecha_hora) = ?", [$v]
-            ))
+            // whereLike sin distinguir mayúsculas (en PostgreSQL usa ILIKE)
+            ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->whereLike('medico', "%{$v}%"))
+            ->when($filtros['paciente'] ?? null, fn ($q, $v) => $q->whereLike('paciente', "%{$v}%"))
+            ->when($filtros['cobertura'] ?? null, fn ($q, $v) => $q->whereLike('cobertura', "%{$v}%"))
+            // periodo viene de un <input type="month"> con formato "YYYY-MM"
+            ->when($this->rangoDelPeriodo($filtros['periodo'] ?? null), fn ($q, $rango) => $q
+                ->where('fecha_hora', '>=', $rango[0])
+                ->where('fecha_hora', '<', $rango[1]))
             ->orderByDesc('fecha_hora');
+    }
+
+    /**
+     * @return array{0: string, 1: string}|null  [inicio del mes, inicio del mes siguiente]
+     */
+    protected function rangoDelPeriodo(?string $periodo): ?array
+    {
+        if (! $periodo || ! preg_match('/^\d{4}-\d{2}$/', $periodo)) {
+            return null;
+        }
+
+        $inicio = \Carbon\Carbon::createFromFormat('!Y-m', $periodo);
+
+        return [
+            $inicio->format('Y-m-d H:i:s'),
+            $inicio->copy()->addMonthNoOverflow()->format('Y-m-d H:i:s'),
+        ];
     }
 
     protected function desdeUnificado(UnifiedPayment $u): array

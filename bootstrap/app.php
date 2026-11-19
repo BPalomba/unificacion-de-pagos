@@ -11,7 +11,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // En Vercel la app corre detrás de un proxy que termina HTTPS.
+        // Confiar en sus cabeceras X-Forwarded-* hace que Laravel genere
+        // URLs https:// (si no, el CSS y los formularios quedan en http://).
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
