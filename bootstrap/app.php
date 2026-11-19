@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureTwoFactorIsConfigured;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,6 +16,11 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Confiar en sus cabeceras X-Forwarded-* hace que Laravel genere
         // URLs https:// (si no, el CSS y los formularios quedan en http://).
         $middleware->trustProxies(at: '*');
+
+        // MFA obligatorio: sin app autenticadora confirmada no se entra.
+        $middleware->alias([
+            '2fa.configured' => EnsureTwoFactorIsConfigured::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

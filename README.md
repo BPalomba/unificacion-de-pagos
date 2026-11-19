@@ -27,6 +27,7 @@
 - [Cómo funciona](#-cómo-funciona)
 - [Stack tecnológico](#-stack-tecnológico)
 - [Instalación](#-instalación)
+- [Acceso y MFA](#-acceso-y-mfa)
 - [Despliegue en Vercel](#️-despliegue-en-vercel)
 - [Comandos útiles](#-comandos-útiles)
 - [Estructura del proyecto](#-estructura-del-proyecto)
@@ -85,6 +86,7 @@ Carga de datos:
 - ✅ Panel web con filtros (médico, paciente, obra social, período) y tabla paginada
 - ✅ Exportación a Excel del resultado ya unificado
 - ✅ Comando Artisan para correrlo desde consola / automatizarlo
+- ✅ Login con **verificación en dos pasos obligatoria** (Google / Microsoft Authenticator)
 - ✅ Dockerizado, con SQLite listo para desarrollo sin configuración extra
 
 ---
@@ -147,6 +149,44 @@ php artisan serve
 
 </details>
 
+Después de instalar, creá tu usuario para poder entrar (ver [Acceso y MFA](#-acceso-y-mfa)):
+
+```bash
+docker compose exec app php artisan user:create   # con Docker
+php artisan user:create                           # sin Docker
+```
+
+---
+
+## 🔐 Acceso y MFA
+
+Todo el sistema requiere iniciar sesión, con **verificación en dos pasos (MFA) obligatoria** mediante una app autenticadora (TOTP). Está implementado con [Laravel Fortify](https://laravel.com/docs/fortify).
+
+- **No hay registro público ni "olvidé mi contraseña"**: las cuentas las administra alguien con acceso a la consola.
+- **Primer ingreso:** después de la contraseña, el sistema pide escanear un código QR con **Google Authenticator** o **Microsoft Authenticator** y confirmar con el código de 6 dígitos. Hasta hacerlo no se puede usar nada más.
+- **Códigos de recuperación:** al activar el MFA se muestran 8 códigos **una sola vez**. Cada uno sirve para entrar una vez sin el celular.
+- **Ingresos siguientes:** email + contraseña + código de la app.
+- Hay un límite de 5 intentos por minuto, tanto para la contraseña como para el código.
+
+### Administración de usuarios
+
+| Comando | Para qué |
+|---|---|
+| `php artisan user:create` | Crea un usuario (pide nombre, email y contraseña de mínimo 10 caracteres). |
+| `php artisan user:reset-password {email}` | Cambia la contraseña y cierra las sesiones abiertas del usuario. |
+| `php artisan user:reset-2fa {email}` | Desvincula la app autenticadora (si perdió el celular y los códigos). En el próximo ingreso vuelve a escanear el QR. |
+| `php artisan user:delete {email}` | Da de baja al usuario y cierra sus sesiones. |
+
+Con Docker, anteponer `docker compose exec app`. En producción (Vercel), correrlos desde tu máquina apuntando a la base externa, igual que las migraciones:
+
+```bash
+DB_CONNECTION=pgsql DB_URL="postgres://..." php artisan user:create
+```
+
+> ℹ️ Los secretos del MFA se guardan **cifrados con `APP_KEY`**. Si esa clave cambia, todos los usuarios tienen que volver a configurar el MFA (`user:reset-2fa`).
+
+> ℹ️ El nombre que aparece en la app autenticadora es `APP_NAME` (por defecto, "Sistema de Copago").
+
 ---
 
 ## ☁️ Despliegue en Vercel
@@ -183,12 +223,15 @@ vercel env add DB_URL             # cadena de conexión completa de la base exte
 # nunca al arrancar el contenedor
 DB_CONNECTION=pgsql DB_URL="postgres://..." php artisan migrate --force
 
+# Crear los usuarios que van a ingresar (también contra la base externa)
+DB_CONNECTION=pgsql DB_URL="postgres://..." php artisan user:create
+
 # Desplegar
 vercel deploy          # preview
 vercel deploy --prod   # producción
 ```
 
-Las sesiones se guardan en la base (`SESSION_DRIVER=database`) porque el resumen de la carga se muestra después de un redirect. Los logs salen por `stderr` y se ven en *Runtime Logs* de Vercel.
+Las sesiones se guardan en la base (`SESSION_DRIVER=database`) porque el resumen de la carga se muestra después de un redirect. La cache también va a la base (`CACHE_STORE=database`): con `array` el límite de intentos de login y la protección contra reusar un código MFA no funcionarían, porque se reiniciarían en cada request. Los logs salen por `stderr` y se ven en *Runtime Logs* de Vercel.
 
 ### Limitaciones a tener en cuenta
 
@@ -289,7 +332,7 @@ Revisá que ambas filas (cobertura y Bono a Persona) tengan **exactamente** los 
 
 | | Nombre | GitHub | LinkedIn |
 |---|---|---|---|
-| <img src="https://github.com/BPalomba.png" width="48" style="border-radius:50%"> | Bruno Palombarini | [@BPalomba](https://github.com/BPalomba) | [LinkedIn](https://www.linkedin.com/in/TU-USUARIO) |
+| <img src="https://github.com/BPalomba.png" width="48" style="border-radius:50%"> | Bruno Palombarini | [@BPalomba](https://github.com/BPalomba) | [LinkedIn](https://www.linkedin.com/in/bruno-palombarini-b43850285/) |
 | <img src="https://github.com/L-LopezMartin.png" width="48" style="border-radius:50%"> | Leandro Lopez | [@L-LopezMartin](https://github.com/L-LopezMartin) | [LinkedIn](https://www.linkedin.com/in/leandro-a-lopez-martin/) |
 | <img src="https://github.com/gaab2305.png" width="48" style="border-radius:50%"> | Gabriela Guzmán Muñoz | [@gaab2305](https://github.com/gaab2305) | [LinkedIn](https://www.linkedin.com/in/gabriela-guzm%C3%A1n-mu%C3%B1oz-09a99970/) |
 | <img src="https://github.com/EmilianoBarroso.png" width="48" style="border-radius:50%"> | Emiliano  Barroso | [@EmilianoBarroso](https://github.com/EmilianoBarroso) | [LinkedIn](https://www.linkedin.com/in/emiliano-agust%C3%ADn-barroso-verdejo/) |
