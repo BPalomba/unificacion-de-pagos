@@ -235,7 +235,7 @@ Revisá que ambas filas (cobertura y Bono a Persona) tengan **exactamente** los 
 
 | | Nombre | GitHub | LinkedIn |
 |---|---|---|---|
-| <img src="https://github.com/BPalomba.png" width="48" style="border-radius:50%"> | Bruno Palombarini | [@BPalomba](https://github.com/BPalomba) | [LinkedIn](https://www.linkedin.com/in/TU-USUARIO) |
+| <img src="https://github.com/BPalomba.png" width="48" style="border-radius:50%"> | Bruno Palombarini | [@BPalomba](https://github.com/BPalomba) | [LinkedIn](https://www.linkedin.com/in/bruno-palombarini-b43850285) |
 | <img src="https://github.com/L-LopezMartin.png" width="48" style="border-radius:50%"> | Leandro Lopez | [@L-LopezMartin](https://github.com/L-LopezMartin) | [LinkedIn](https://www.linkedin.com/in/leandro-a-lopez-martin/) |
 | <img src="https://github.com/gaab2305.png" width="48" style="border-radius:50%"> | Gabriela Guzmán Muñoz | [@gaab2305](https://github.com/gaab2305) | [LinkedIn](https://www.linkedin.com/in/gabriela-guzm%C3%A1n-mu%C3%B1oz-09a99970/) |
 | <img src="https://github.com/EmilianoBarroso.png" width="48" style="border-radius:50%"> | Emiliano  Barroso | [@EmilianoBarroso](https://github.com/EmilianoBarroso) | [LinkedIn](https://www.linkedin.com/in/emiliano-agust%C3%ADn-barroso-verdejo/) |
