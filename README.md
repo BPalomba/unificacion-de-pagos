@@ -83,8 +83,9 @@ Carga de datos:
 - ✅ Unificación en un solo registro, sumando montos y sin perder trazabilidad de los comprobantes originales
 - ✅ Cola de **revisión manual** para los casos ambiguos (3+ registros, combinaciones inesperadas de TIPO)
 - ✅ Carga por **Excel** de reportes del hospital
-- ✅ Panel web con filtros (médico, paciente, obra social, período) y tabla paginada
-- ✅ Exportación a Excel del resultado ya unificado
+- ✅ **Informes temporales por usuario**: cada Excel subido queda disponible solo para quien lo subió durante 2 horas (configurable) y después se borra
+- ✅ Vista previa de cada informe con filtros (médico, paciente, obra social, período) y tabla paginada
+- ✅ Descarga a Excel del resultado ya unificado, todas las veces que haga falta mientras el informe esté vigente
 - ✅ Comando Artisan para correrlo desde consola / automatizarlo
 - ✅ Login con **verificación en dos pasos obligatoria** (Google / Microsoft Authenticator)
 - ✅ Dockerizado, con SQLite listo para desarrollo sin configuración extra
@@ -96,8 +97,10 @@ Carga de datos:
 1. **Normaliza** cada fila del Excel (montos, fechas, horas) y calcula una *clave de negocio* que identifica que dos filas son del mismo turno/prestación (mismo paciente, fecha, hora, prestación...).
 2. **Agrupa** las filas por esa clave. Si un grupo tiene una fila de cobertura y una de "Bono a Persona", las **unifica**, sumando los montos.
 3. Lo que no se puede unificar solo (por ejemplo, grupos con 3 o más filas) queda separado para **revisión manual**, sin tocarse.
-4. Todo esto primero se puede correr en modo **dry-run** (solo mostrar el resultado, sin guardar nada), y recién después persistirse en la base.
-5. El resultado final se puede **descargar en un Excel** con todo ya unificado, o consultarse desde el panel web.
+4. El resultado se guarda como un **informe temporal** del usuario que subió el Excel. Al subirlo se abre la página del informe, con la vista previa y el botón para **descargar el Excel** unificado. Desde la pantalla principal se accede a los informes vigentes.
+5. Pasado `PAYMENTS_REPORT_TTL_MINUTES` (120 por defecto), el informe deja de verse y se **borra de la base** junto con sus pagos. Son datos de pacientes: no se conservan. El Excel original tampoco se guarda.
+
+La limpieza corre cada vez que alguien usa la app, con `php artisan informes:purgar`, y con un Vercel Cron diario (`/cron/purgar-informes`). Borra los informes vencidos y **todo pago que no pertenezca a un informe vigente**.
 
 ---
 
@@ -218,6 +221,8 @@ vercel env add APP_URL            # ej: https://tu-proyecto.vercel.app
 vercel env add DB_CONNECTION      # pgsql o mysql
 vercel env add DB_URL             # cadena de conexión completa de la base externa
                                   # (o DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD)
+vercel env add CRON_SECRET        # cadena aleatoria larga; Vercel la manda al cron de limpieza
+vercel env add PAYMENTS_REPORT_TTL_MINUTES   # opcional, por defecto 120
 
 # Migraciones: se corren UNA vez desde tu máquina contra la base externa,
 # nunca al arrancar el contenedor
@@ -237,6 +242,7 @@ Las sesiones se guardan en la base (`SESSION_DRIVER=database`) porque el resumen
 
 - **Vercel limita el cuerpo de cada request a 4.5 MB**: un Excel más grande va a fallar con un error 413.
 - Cada request tiene un tiempo máximo de ejecución, así que los archivos muy grandes pueden cortarse a mitad de camino (ver el Roadmap: mover la persistencia a un Job).
+- **Vercel Cron en el plan Hobby corre como máximo una vez por día** (`vercel.json` lo programa a las 06:00 hora argentina). Entre corridas, los informes vencidos ya no se ven y se borran la próxima vez que alguien use la app.
 - Para probar la imagen localmente: `docker build -f Dockerfile.vercel -t unificacion-vercel .`
 
 ---
@@ -247,8 +253,11 @@ Las sesiones se guardan en la base (`SESSION_DRIVER=database`) porque el resumen
 # Correr el comando de unificación por consola, dentro del contenedor
 docker compose exec app php artisan pagos:unificar --source=excel --file=/var/www/html/storage/app/pagos.xlsx --dry-run
 
-# Lo mismo, pero persistiendo el resultado en la base
-docker compose exec app php artisan pagos:unificar --source=excel --file=/var/www/html/storage/app/pagos.xlsx
+# Lo mismo, pero guardándolo como informe temporal de un usuario
+docker compose exec app php artisan pagos:unificar --source=excel --file=/var/www/html/storage/app/pagos.xlsx --user=ana@hospital.test
+
+# Borrar ya los informes vencidos (y todo pago sin informe vigente)
+docker compose exec app php artisan informes:purgar
 
 # Desde el endpoint del hospital en vez de Excel
 docker compose exec app php artisan pagos:unificar --source=endpoint --dry-run

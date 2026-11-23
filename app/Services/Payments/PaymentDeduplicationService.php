@@ -20,6 +20,19 @@ class PaymentDeduplicationService
     }
 
     /**
+     * Arma el servicio con los parámetros de config/payments.php.
+     */
+    public static function fromConfig(): self
+    {
+        return new self(
+            normalizer: new PaymentNormalizer(config('payments.business_key_fields')),
+            tipoAtencion: config('payments.tipo_atencion'),
+            toleranceSeconds: config('payments.numero_time_tolerance_seconds'),
+            estadoPriority: config('payments.estado_priority'),
+        );
+    }
+
+    /**
      * Analiza una colección de filas crudas (arrays asociativos, ya sea
      * desde Excel o desde el endpoint) SIN escribir nada en la base.
      * Pensado para poder correr en modo "dry run" antes de persistir.

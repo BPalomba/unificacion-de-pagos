@@ -5,6 +5,8 @@ namespace App\Services\Payments;
 use App\Models\Payment;
 use App\Models\UnifiedPayment;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Collection;
 use Generator;
 
@@ -17,19 +19,40 @@ use Generator;
 class UnifiedPaymentsQuery
 {
     /**
+     * Siempre se consulta un único informe (batchId): los datos de un
+     * usuario nunca se mezclan con los de otro.
+     *
      * @param  array{medico?: string, paciente?: string, cobertura?: string, periodo?: string}  $filtros
      */
-    public function rows(?string $batchId = null, array $filtros = [], ?int $limit = null): Collection
+    public function rows(string $batchId, array $filtros = [], ?int $limit = null): Collection
     {
         return collect($this->rowsGenerator($batchId, $filtros, $limit))->values();
     }
 
-    public function generator(?string $batchId = null, array $filtros = []): Generator
+    public function generator(string $batchId, array $filtros = []): Generator
     {
         yield from $this->rowsGenerator($batchId, $filtros, null);
     }
 
-    protected function rowsGenerator(?string $batchId = null, array $filtros = [], ?int $limit = null): Generator
+    /**
+     * Una página de filas del informe, en el mismo orden que el export.
+     */
+    public function paginate(string $batchId, array $filtros = [], int $perPage = 50, ?int $page = null): LengthAwarePaginator
+    {
+        $page ??= Paginator::resolveCurrentPage();
+
+        $total = $this->unifiedQuery($batchId, $filtros)->count()
+            + $this->standaloneQuery($batchId, $filtros)->count()
+            + $this->revisionQuery($batchId, $filtros)->count();
+
+        $items = collect($this->rowsGenerator($batchId, $filtros, $perPage, ($page - 1) * $perPage))->values();
+
+        return new LengthAwarePaginator($items, $total, $perPage, $page, [
+            'path' => Paginator::resolveCurrentPath(),
+        ]);
+    }
+
+    protected function rowsGenerator(string $batchId, array $filtros = [], ?int $limit = null, int $offset = 0): Generator
     {
         $unificados = $this->unifiedQuery($batchId, $filtros)->cursor();
         $standalone = $this->standaloneQuery($batchId, $filtros)->cursor();
@@ -64,22 +87,37 @@ class UnifiedPaymentsQuery
                 }
             }
 
+            // Las filas anteriores a la página pedida se saltean sin armarlas
+            $saltear = $offset > 0;
+
             if ($minItem === 'u') {
-                yield $this->desdeUnificado($u);
+                if (! $saltear) {
+                    yield $this->desdeUnificado($u);
+                }
                 $uIterator->next();
             } elseif ($minItem === 's') {
-                yield $this->desdeStandalone($s);
+                if (! $saltear) {
+                    yield $this->desdeStandalone($s);
+                }
                 $sIterator->next();
             } elseif ($minItem === 'r') {
-                yield $this->desdeRevision($r);
+                if (! $saltear) {
+                    yield $this->desdeRevision($r);
+                }
                 $rIterator->next();
+            }
+
+            if ($saltear) {
+                $offset--;
+
+                continue;
             }
 
             $count++;
         }
     }
 
-    protected function unifiedQuery(?string $batchId = null, array $filtros = []): Builder
+    protected function unifiedQuery(string $batchId, array $filtros = []): Builder
     {
         return $this->aplicarFiltros(
             UnifiedPayment::query()->with(['paymentCobertura', 'paymentBonoPersona']),
@@ -88,7 +126,7 @@ class UnifiedPaymentsQuery
         );
     }
 
-    protected function standaloneQuery(?string $batchId = null, array $filtros = []): Builder
+    protected function standaloneQuery(string $batchId, array $filtros = []): Builder
     {
         return $this->aplicarFiltros(
             Payment::query()->where('dedup_status', 'standalone'),
@@ -97,7 +135,7 @@ class UnifiedPaymentsQuery
         );
     }
 
-    protected function revisionQuery(?string $batchId = null, array $filtros = []): Builder
+    protected function revisionQuery(string $batchId, array $filtros = []): Builder
     {
         return $this->aplicarFiltros(
             Payment::query()->where('dedup_status', 'revision'),
@@ -111,10 +149,10 @@ class UnifiedPaymentsQuery
      * (antes se usaba strftime(), que solo existe en SQLite) para que funcione
      * igual en SQLite, PostgreSQL y MySQL.
      */
-    protected function aplicarFiltros(Builder $query, ?string $batchId, array $filtros): Builder
+    protected function aplicarFiltros(Builder $query, string $batchId, array $filtros): Builder
     {
         return $query
-            ->when($batchId, fn ($q) => $q->where('import_batch_id', $batchId))
+            ->where('import_batch_id', $batchId)
             // whereLike sin distinguir mayúsculas (en PostgreSQL usa ILIKE)
             ->when($filtros['medico'] ?? null, fn ($q, $v) => $q->whereLike('medico', "%{$v}%"))
             ->when($filtros['paciente'] ?? null, fn ($q, $v) => $q->whereLike('paciente', "%{$v}%"))

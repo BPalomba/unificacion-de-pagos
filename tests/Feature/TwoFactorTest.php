@@ -4,42 +4,21 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Fortify\Actions\ConfirmTwoFactorAuthentication;
-use Laravel\Fortify\Actions\EnableTwoFactorAuthentication;
-use Laravel\Fortify\Fortify;
-use PragmaRX\Google2FA\Google2FA;
+use Tests\Concerns\CreatesUsersWithTwoFactor;
 use Tests\TestCase;
 
 class TwoFactorTest extends TestCase
 {
-    use RefreshDatabase;
-
-    private function currentCode(User $user): string
-    {
-        $secret = Fortify::currentEncrypter()->decrypt($user->fresh()->two_factor_secret);
-
-        return app(Google2FA::class)->getCurrentOtp($secret);
-    }
-
-    private function userWithTwoFactor(): User
-    {
-        $user = User::factory()->create();
-        app(EnableTwoFactorAuthentication::class)($user);
-        app(ConfirmTwoFactorAuthentication::class)($user, $this->currentCode($user));
-
-        // El código usado para confirmar queda "quemado" en la cache.
-        cache()->flush();
-
-        return $user->fresh();
-    }
+    use CreatesUsersWithTwoFactor, RefreshDatabase;
 
     public function test_user_without_two_factor_is_forced_to_set_it_up(): void
     {
         $user = User::factory()->create();
 
         $this->actingAs($user)->get('/')->assertRedirect(route('two-factor.setup'));
-        $this->actingAs($user)->get('/copagos/exportar')->assertRedirect(route('two-factor.setup'));
-        $this->actingAs($user)->post('/copagos')->assertRedirect(route('two-factor.setup'));
+        $this->actingAs($user)->get('/informes/cualquiera')->assertRedirect(route('two-factor.setup'));
+        $this->actingAs($user)->get('/informes/cualquiera/descargar')->assertRedirect(route('two-factor.setup'));
+        $this->actingAs($user)->post('/informes')->assertRedirect(route('two-factor.setup'));
     }
 
     public function test_setup_page_shows_qr_and_keeps_the_same_secret_on_reload(): void

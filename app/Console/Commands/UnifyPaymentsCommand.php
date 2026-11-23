@@ -2,25 +2,44 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\FindsUsers;
+use App\Models\PaymentReport;
 use App\Services\Payments\DataSources\EndpointPaymentSource;
 use App\Services\Payments\DataSources\ExcelPaymentSource;
 use App\Services\Payments\PaymentDeduplicationService;
-use App\Services\Payments\PaymentNormalizer;
+use App\Services\Payments\PaymentReportService;
 use Illuminate\Console\Command;
 
 class UnifyPaymentsCommand extends Command
 {
+    use FindsUsers;
+
     protected $signature = 'pagos:unificar
         {--source=excel : Origen de datos: excel | endpoint}
         {--file= : Ruta al archivo .xlsx cuando --source=excel}
         {--url= : URL del endpoint cuando --source=endpoint (por defecto, la de config/payments.php)}
+        {--user= : Email del usuario dueño del informe (obligatorio salvo con --dry-run)}
         {--dry-run : Analiza y muestra el resultado sin escribir nada en la base}';
 
-    protected $description = 'Detecta y unifica pagos duplicados (cobertura + Bono a Persona) desde Excel o desde el endpoint del hospital';
+    protected $description = 'Detecta y unifica pagos duplicados (cobertura + Bono a Persona) y los guarda como un informe temporal del usuario';
 
-    public function handle(): int
+    public function handle(PaymentReportService $reports): int
     {
         $source = $this->option('source');
+
+        // El usuario se valida antes de leer el archivo, para fallar rápido
+        $user = null;
+        if (! $this->option('dry-run')) {
+            if (! $this->option('user')) {
+                $this->error('Falta indicar --user=email (el informe queda a nombre de ese usuario), o usar --dry-run.');
+
+                return self::FAILURE;
+            }
+
+            if (! $user = $this->findUser($this->option('user'))) {
+                return self::FAILURE;
+            }
+        }
 
         try {
             $rawRows = match ($source) {
@@ -36,27 +55,23 @@ class UnifyPaymentsCommand extends Command
 
         $this->info("Filas leídas: {$rawRows->count()}");
 
-        $normalizer = new PaymentNormalizer(config('payments.business_key_fields'));
-        $service = new PaymentDeduplicationService(
-            normalizer: $normalizer,
-            tipoPaciente: config('payments.tipo_paciente'),
-            toleranceSeconds: config('payments.numero_time_tolerance_seconds'),
-            estadoPriority: config('payments.estado_priority'),
-        );
-
-        $analysis = $service->analyze($rawRows);
-
-        $this->mostrarResumen($analysis);
-
         if ($this->option('dry-run')) {
+            $this->mostrarResumen(PaymentDeduplicationService::fromConfig()->analyze($rawRows));
             $this->comment('Modo dry-run: no se escribió nada en la base de datos.');
 
             return self::SUCCESS;
         }
 
-        $resultado = $service->persist($analysis, $source);
+        $nombre = $source === 'excel' ? basename($this->option('file')) : 'endpoint';
+        $informe = $reports->crear($user, $rawRows, $nombre, $source);
 
-        $this->info("Persistido. Batch: {$resultado['batch_id']}");
+        $this->table(
+            ['Unificados', 'Sin duplicado', 'Para revisión manual'],
+            [[$informe->unificados, $informe->standalone, $informe->revision]]
+        );
+
+        $vence = PaymentReport::horaLocal($informe->expires_at);
+        $this->info("Informe {$informe->id} creado para {$user->email}. Vence el {$vence}.");
 
         return self::SUCCESS;
     }

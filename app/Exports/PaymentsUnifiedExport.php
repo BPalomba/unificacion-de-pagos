@@ -15,7 +15,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class PaymentsUnifiedExport implements FromGenerator, WithHeadings, WithMapping, ShouldAutoSize, WithEvents
 {
-    public function __construct(protected ?string $batchId = null)
+    public function __construct(protected string $batchId)
     {
     }
 

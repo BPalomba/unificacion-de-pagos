@@ -3,111 +3,157 @@
 namespace App\Http\Controllers;
 
 use App\Exports\PaymentsUnifiedExport;
+use App\Models\PaymentReport;
+use App\Models\PaymentReviewGroup;
 use App\Services\Payments\DataSources\ExcelPaymentSource;
-use App\Services\Payments\PaymentDeduplicationService;
-use App\Services\Payments\PaymentNormalizer;
+use App\Services\Payments\PaymentReportService;
 use App\Services\Payments\UnifiedPaymentsQuery;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
+/**
+ * Informes temporales: cada Excel subido se procesa y queda disponible
+ * solo para quien lo subió, durante payments.report_ttl_minutes minutos.
+ */
 class CopagosController extends Controller
 {
-    /**
-     * Pantalla principal: la tabla de "Últimos copagos registrados",
-     * con los filtros del header (médico, período, paciente, cobertura).
-     */
-    public function index(Request $request): View
+    public function __construct(protected PaymentReportService $reports)
     {
-        $filtros = $request->only(['medico', 'paciente', 'cobertura', 'periodo']);
-
-        $rows = (new UnifiedPaymentsQuery())->rows(null, $filtros, 50);
-
-        return view('welcome', [
-            'rows' => $rows,
-            'filtros' => $filtros,
-        ]);
     }
 
     /**
-     * Recibe el Excel desde el modal "Nuevo registro".
+     * Pantalla principal: los informes vigentes del usuario.
+     */
+    public function index(Request $request): View
+    {
+        $this->reports->purgarVencidos();
+
+        $informes = $request->user()->paymentReports()->vigentes()->latest()->get();
+
+        return view('welcome', ['informes' => $informes]);
+    }
+
+    /**
+     * Recibe el Excel desde el modal "Nuevo informe", lo procesa y lleva
+     * directo a la página del informe.
      */
     public function store(Request $request): RedirectResponse
     {
-        // Se valida que el archivo exista y sea de extensión xlsx o xls
-        // Se valida que el modo sea alguno de los dos: dry_run o persistir
-        $validated = $request->validate([
+        $request->validate([
             'archivo' => ['required', 'file', 'mimes:xlsx,xls'],
-            'modo' => ['required', 'in:dry_run,persistir'],
         ], [], [
             'archivo' => 'archivo Excel',
         ]);
 
-        // Se guarda el archivo físicamente en su ruta por defecto, desde el directorio raíz: storage/app/private/payments-uploads
-        // Esto es ruta relativa
-        $path = $request->file('archivo')->store('payments-uploads');
+        $this->reports->purgarVencidos();
 
+        $archivo = $request->file('archivo');
+
+        // Se guarda temporalmente en storage/app/private/payments-uploads
+        $path = $archivo->store('payments-uploads');
 
         try {
-            // Se obtiene la ruta absoluta
-            $fullPath = Storage::path($path);
+            try {
+                $rawRows = (new ExcelPaymentSource(Storage::path($path)))->fetch();
+            } catch (\Throwable $e) {
+                Log::warning('No se pudo leer el Excel subido', ['error' => $e->getMessage()]);
 
-            // Se lee el archivo
-            $rawRows = (new ExcelPaymentSource($fullPath))->fetch();
-
-            // Se configura al normalizer
-            $normalizer = new PaymentNormalizer(config('payments.business_key_fields'));
-
-            // Se configura el servicio de desduplicado
-            $service = new PaymentDeduplicationService(
-                normalizer: $normalizer,
-                tipoAtencion: config('payments.tipo_atencion'),
-                toleranceSeconds: config('payments.numero_time_tolerance_seconds'),
-                estadoPriority: config('payments.estado_priority'),
-            );
-
-            // El servicio de desduplicado hace su magia
-            $analysis = $service->analyze($rawRows);
-
-            // Los datos resumidos
-            $resumen = [
-                'filas_leidas' => $rawRows->count(),
-                'unificados' => count($analysis['pairs']),
-                'standalone' => count($analysis['standalone']),
-                'revision' => count($analysis['review']),
-                'modo' => $validated['modo'],
-            ];
-
-            // Si el modo era persistir, que el service lo persista y también devuelva el batchId
-            if ($validated['modo'] === 'persistir') {
-                $resultado = $service->persist($analysis, 'excel');
-                $resumen['batch_id'] = $resultado['batch_id'];
+                return redirect()->route('copagos.index')->withErrors([
+                    'archivo' => 'No se pudo leer el Excel. Verificá que sea el reporte del sistema del hospital.',
+                ]);
             }
 
-            // Se vuelve a la pantalla con el resumen, los primeros 20 pares analizados y los pares que necesitan review
-            return redirect()
-                ->route('copagos.index')
-                ->with('resumen', $resumen)
-                    ->with('revision', $analysis['review']);
+            $informe = $this->reports->crear($request->user(), $rawRows, $archivo->getClientOriginalName());
+
+            return redirect()->route('informes.show', $informe);
         } finally {
-            // Se elimina el archivo temporal una vez que ya no hace falta
+            // El Excel original no se conserva: solo el resultado procesado
             Storage::delete($path);
         }
     }
 
     /**
-     * Botón "Descargar reporte": exporta lo que haya en la base
-     * (respetando los filtros activos, si los hay).
+     * Página del informe: resumen, grupos a revisar y la grilla paginada.
      */
-    public function export(Request $request)
+    public function show(Request $request, string $informe): View
     {
-        $batchId = $request->query('batch_id');
+        $informe = $this->informeDelUsuario($request, $informe);
 
-        return Excel::download(
-            new PaymentsUnifiedExport($batchId),
-            $batchId ? "copagos_{$batchId}.xlsx" : 'copagos.xlsx'
-        );
+        $filtros = $request->only(['medico', 'paciente', 'cobertura', 'periodo']);
+
+        $rows = (new UnifiedPaymentsQuery())->paginate($informe->id, $filtros, 50);
+
+        $revision = PaymentReviewGroup::where('import_batch_id', $informe->id)
+            ->with('payments')
+            ->orderBy('id')
+            ->get();
+
+        return view('informes.show', [
+            'informe' => $informe,
+            'rows' => $rows,
+            'filtros' => $filtros,
+            'revision' => $revision,
+        ]);
     }
-}   
+
+    /**
+     * Descarga el Excel procesado del informe.
+     */
+    public function export(Request $request, string $informe): BinaryFileResponse
+    {
+        $informe = $this->informeDelUsuario($request, $informe);
+
+        return Excel::download(new PaymentsUnifiedExport($informe->id), $informe->nombre_descarga);
+    }
+
+    /**
+     * Elimina el informe en el momento, sin esperar a que venza.
+     */
+    public function destroy(Request $request, string $informe): RedirectResponse
+    {
+        $informe = $this->informeDelUsuario($request, $informe);
+
+        $this->reports->eliminar($informe);
+
+        return redirect()->route('copagos.index')
+            ->with('status', "Se eliminó el informe \"{$informe->nombre_archivo}\".");
+    }
+
+    /**
+     * Limpieza disparada por Vercel Cron (Authorization: Bearer CRON_SECRET).
+     * Sin secreto configurado, o con uno incorrecto, la ruta "no existe".
+     */
+    public function purgar(Request $request): JsonResponse
+    {
+        $secreto = (string) config('payments.cron_secret');
+
+        abort_if($secreto === '' || ! hash_equals($secreto, (string) $request->bearerToken()), 404);
+
+        return response()->json($this->reports->purgarVencidos());
+    }
+
+    /**
+     * Busca un informe vigente del usuario logueado. Si no existe, es de
+     * otro usuario o ya venció, se responde igual en los tres casos para
+     * no revelar si existe.
+     */
+    protected function informeDelUsuario(Request $request, string $id): PaymentReport
+    {
+        $informe = $request->user()->paymentReports()->vigentes()->find($id);
+
+        if (! $informe) {
+            throw new HttpResponseException(
+                redirect()->route('copagos.index')->with('warning', 'El informe no existe o ya venció.')
+            );
+        }
+
+        return $informe;
+    }
+}

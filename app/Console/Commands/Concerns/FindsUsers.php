@@ -7,9 +7,12 @@ use Illuminate\Support\Facades\DB;
 
 trait FindsUsers
 {
-    protected function findUser(): ?User
+    /**
+     * Busca al usuario por email. Si no se pasa, usa el argumento {email}.
+     */
+    protected function findUser(?string $email = null): ?User
     {
-        $email = mb_strtolower(trim((string) $this->argument('email')));
+        $email = mb_strtolower(trim((string) ($email ?? $this->argument('email'))));
         $user = User::where('email', $email)->first();
 
         if (! $user) {

@@ -21,6 +21,14 @@ Route::middleware('auth')->group(function () {
 
 Route::middleware(['auth', '2fa.configured'])->group(function () {
     Route::get('/', [CopagosController::class, 'index'])->name('copagos.index');
-    Route::post('/copagos', [CopagosController::class, 'store'])->name('copagos.store');
-    Route::get('/copagos/exportar', [CopagosController::class, 'export'])->name('copagos.export');
+    Route::post('/informes', [CopagosController::class, 'store'])->name('informes.store');
+    Route::get('/informes/{informe}', [CopagosController::class, 'show'])->name('informes.show');
+    Route::get('/informes/{informe}/descargar', [CopagosController::class, 'export'])->name('informes.export');
+    Route::delete('/informes/{informe}', [CopagosController::class, 'destroy'])->name('informes.destroy');
 });
+
+// Limpieza de informes vencidos, llamada por Vercel Cron (ver vercel.json).
+// Protegida con CRON_SECRET en vez de login.
+Route::get('/cron/purgar-informes', [CopagosController::class, 'purgar'])
+    ->middleware('throttle:10,1')
+    ->name('cron.purgar-informes');
