@@ -66,6 +66,34 @@ return [
 
     /*
     |--------------------------------------------------------------------
+    | Duración de los informes (en minutos)
+    |--------------------------------------------------------------------
+    | Cada Excel subido genera un informe que solo ve quien lo subió.
+    | Pasado este tiempo deja de estar disponible y se borra de la base
+    | junto con sus pagos (son datos de pacientes: no se conservan).
+    */
+    'report_ttl_minutes' => (int) env('PAYMENTS_REPORT_TTL_MINUTES', 120),
+
+    /*
+    |--------------------------------------------------------------------
+    | Zona horaria para mostrar horas en pantalla
+    |--------------------------------------------------------------------
+    | La app guarda todo en UTC (app.timezone); esto solo afecta cómo se
+    | muestran la hora de subida y de vencimiento de los informes.
+    */
+    'display_timezone' => env('PAYMENTS_DISPLAY_TIMEZONE', 'America/Argentina/Buenos_Aires'),
+
+    /*
+    |--------------------------------------------------------------------
+    | Secreto del cron de limpieza
+    |--------------------------------------------------------------------
+    | Vercel Cron llama a /cron/purgar-informes con el header
+    | "Authorization: Bearer <CRON_SECRET>". Sin secreto, la ruta no existe.
+    */
+    'cron_secret' => env('CRON_SECRET'),
+
+    /*
+    |--------------------------------------------------------------------
     | Endpoint por defecto (cuando la fuente de datos es "endpoint")
     |--------------------------------------------------------------------
     */

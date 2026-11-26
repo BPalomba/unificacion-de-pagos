@@ -9,6 +9,10 @@
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-privado-lightgrey)](#-licencia)
 
+### 🌐 [Ver la demo en vivo → unificacion-pagos.vercel.app](https://unificacion-pagos.vercel.app)
+
+<sub>Demo / prueba de concepto pública: usar solo Excels con datos de prueba o anonimizados.</sub>
+
 [Reportar un bug](../../issues) · [Pedir una funcionalidad](../../issues)
 
 </div>
@@ -23,6 +27,8 @@
 - [Cómo funciona](#-cómo-funciona)
 - [Stack tecnológico](#-stack-tecnológico)
 - [Instalación](#-instalación)
+- [Acceso y MFA](#-acceso-y-mfa)
+- [Despliegue en Vercel](#️-despliegue-en-vercel)
 - [Comandos útiles](#-comandos-útiles)
 - [Estructura del proyecto](#-estructura-del-proyecto)
 - [Solución de problemas](#-solución-de-problemas)
@@ -77,9 +83,11 @@ Carga de datos:
 - ✅ Unificación en un solo registro, sumando montos y sin perder trazabilidad de los comprobantes originales
 - ✅ Cola de **revisión manual** para los casos ambiguos (3+ registros, combinaciones inesperadas de TIPO)
 - ✅ Carga por **Excel** de reportes del hospital
-- ✅ Panel web con filtros (médico, paciente, obra social, período) y tabla paginada
-- ✅ Exportación a Excel del resultado ya unificado
+- ✅ **Informes temporales por usuario**: cada Excel subido queda disponible solo para quien lo subió durante 2 horas (configurable) y después se borra
+- ✅ Vista previa de cada informe con filtros (médico, paciente, obra social, período) y tabla paginada
+- ✅ Descarga a Excel del resultado ya unificado, todas las veces que haga falta mientras el informe esté vigente
 - ✅ Comando Artisan para correrlo desde consola / automatizarlo
+- ✅ Login con **verificación en dos pasos obligatoria** (Google / Microsoft Authenticator)
 - ✅ Dockerizado, con SQLite listo para desarrollo sin configuración extra
 
 ---
@@ -89,8 +97,10 @@ Carga de datos:
 1. **Normaliza** cada fila del Excel (montos, fechas, horas) y calcula una *clave de negocio* que identifica que dos filas son del mismo turno/prestación (mismo paciente, fecha, hora, prestación...).
 2. **Agrupa** las filas por esa clave. Si un grupo tiene una fila de cobertura y una de "Bono a Persona", las **unifica**, sumando los montos.
 3. Lo que no se puede unificar solo (por ejemplo, grupos con 3 o más filas) queda separado para **revisión manual**, sin tocarse.
-4. Todo esto primero se puede correr en modo **dry-run** (solo mostrar el resultado, sin guardar nada), y recién después persistirse en la base.
-5. El resultado final se puede **descargar en un Excel** con todo ya unificado, o consultarse desde el panel web.
+4. El resultado se guarda como un **informe temporal** del usuario que subió el Excel. Al subirlo se abre la página del informe, con la vista previa y el botón para **descargar el Excel** unificado. Desde la pantalla principal se accede a los informes vigentes.
+5. Pasado `PAYMENTS_REPORT_TTL_MINUTES` (120 por defecto), el informe deja de verse y se **borra de la base** junto con sus pagos. Son datos de pacientes: no se conservan. El Excel original tampoco se guarda.
+
+La limpieza corre cada vez que alguien usa la app, con `php artisan informes:purgar`, y con un Vercel Cron diario (`/cron/purgar-informes`). Borra los informes vencidos y **todo pago que no pertenezca a un informe vigente**.
 
 ---
 
@@ -142,6 +152,99 @@ php artisan serve
 
 </details>
 
+Después de instalar, creá tu usuario para poder entrar (ver [Acceso y MFA](#-acceso-y-mfa)):
+
+```bash
+docker compose exec app php artisan user:create   # con Docker
+php artisan user:create                           # sin Docker
+```
+
+---
+
+## 🔐 Acceso y MFA
+
+Todo el sistema requiere iniciar sesión, con **verificación en dos pasos (MFA) obligatoria** mediante una app autenticadora (TOTP). Está implementado con [Laravel Fortify](https://laravel.com/docs/fortify).
+
+- **No hay registro público ni "olvidé mi contraseña"**: las cuentas las administra alguien con acceso a la consola.
+- **Primer ingreso:** después de la contraseña, el sistema pide escanear un código QR con **Google Authenticator** o **Microsoft Authenticator** y confirmar con el código de 6 dígitos. Hasta hacerlo no se puede usar nada más.
+- **Códigos de recuperación:** al activar el MFA se muestran 8 códigos **una sola vez**. Cada uno sirve para entrar una vez sin el celular.
+- **Ingresos siguientes:** email + contraseña + código de la app.
+- Hay un límite de 5 intentos por minuto, tanto para la contraseña como para el código.
+
+### Administración de usuarios
+
+| Comando | Para qué |
+|---|---|
+| `php artisan user:create` | Crea un usuario (pide nombre, email y contraseña de mínimo 10 caracteres). |
+| `php artisan user:reset-password {email}` | Cambia la contraseña y cierra las sesiones abiertas del usuario. |
+| `php artisan user:reset-2fa {email}` | Desvincula la app autenticadora (si perdió el celular y los códigos). En el próximo ingreso vuelve a escanear el QR. |
+| `php artisan user:delete {email}` | Da de baja al usuario y cierra sus sesiones. |
+
+Con Docker, anteponer `docker compose exec app`. En producción (Vercel), correrlos desde tu máquina apuntando a la base externa, igual que las migraciones:
+
+```bash
+DB_CONNECTION=pgsql DB_URL="postgres://..." php artisan user:create
+```
+
+> ℹ️ Los secretos del MFA se guardan **cifrados con `APP_KEY`**. Si esa clave cambia, todos los usuarios tienen que volver a configurar el MFA (`user:reset-2fa`).
+
+> ℹ️ El nombre que aparece en la app autenticadora es `APP_NAME` (por defecto, "Sistema de Copago").
+
+---
+
+## ☁️ Despliegue en Vercel
+
+**Producción:** https://unificacion-pagos.vercel.app
+
+La app se despliega como contenedor en Vercel con FrankenPHP, siguiendo [la guía oficial](https://vercel.com/kb/guide/laravel-php-with-docker). Los archivos que usa son:
+
+| Archivo | Para qué |
+|---|---|
+| `Dockerfile.vercel` | Imagen de producción (FrankenPHP + PHP 8.3). El `Dockerfile` normal sigue siendo el de desarrollo. |
+| `Caddyfile` | Sirve solo `public/` y escucha en el puerto `PORT` que pasa Vercel. |
+| `vercel.json` | Declara el servicio contenedor y manda todas las rutas a él. |
+| `.dockerignore` | Deja afuera `.env`, `vendor`, la base SQLite local, etc. |
+
+> ⚠️ **En Vercel el disco no persiste**, así que SQLite no sirve: los datos se perderían. Hace falta una base externa, PostgreSQL (por ejemplo, Neon desde el Marketplace de Vercel) o MySQL. La imagen ya trae `pdo_pgsql` y `pdo_mysql`.
+
+### Pasos
+
+```bash
+npm install -g vercel
+vercel login
+vercel link                       # crea/vincula el proyecto en Vercel
+
+# Variables de entorno (repetir para Production / Preview según corresponda)
+php artisan key:generate --show   # copiar el valor base64:...
+vercel env add APP_KEY
+vercel env add APP_URL            # ej: https://tu-proyecto.vercel.app
+vercel env add DB_CONNECTION      # pgsql o mysql
+vercel env add DB_URL             # cadena de conexión completa de la base externa
+                                  # (o DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD)
+vercel env add CRON_SECRET        # cadena aleatoria larga; Vercel la manda al cron de limpieza
+vercel env add PAYMENTS_REPORT_TTL_MINUTES   # opcional, por defecto 120
+
+# Migraciones: se corren UNA vez desde tu máquina contra la base externa,
+# nunca al arrancar el contenedor
+DB_CONNECTION=pgsql DB_URL="postgres://..." php artisan migrate --force
+
+# Crear los usuarios que van a ingresar (también contra la base externa)
+DB_CONNECTION=pgsql DB_URL="postgres://..." php artisan user:create
+
+# Desplegar
+vercel deploy          # preview
+vercel deploy --prod   # producción
+```
+
+Las sesiones se guardan en la base (`SESSION_DRIVER=database`) porque el resumen de la carga se muestra después de un redirect. La cache también va a la base (`CACHE_STORE=database`): con `array` el límite de intentos de login y la protección contra reusar un código MFA no funcionarían, porque se reiniciarían en cada request. Los logs salen por `stderr` y se ven en *Runtime Logs* de Vercel.
+
+### Limitaciones a tener en cuenta
+
+- **Vercel limita el cuerpo de cada request a 4.5 MB**: un Excel más grande va a fallar con un error 413.
+- Cada request tiene un tiempo máximo de ejecución, así que los archivos muy grandes pueden cortarse a mitad de camino (ver el Roadmap: mover la persistencia a un Job).
+- **Vercel Cron en el plan Hobby corre como máximo una vez por día** (`vercel.json` lo programa a las 06:00 hora argentina). Entre corridas, los informes vencidos ya no se ven y se borran la próxima vez que alguien use la app.
+- Para probar la imagen localmente: `docker build -f Dockerfile.vercel -t unificacion-vercel .`
+
 ---
 
 ## 🔧 Comandos útiles
@@ -150,8 +253,11 @@ php artisan serve
 # Correr el comando de unificación por consola, dentro del contenedor
 docker compose exec app php artisan pagos:unificar --source=excel --file=/var/www/html/storage/app/pagos.xlsx --dry-run
 
-# Lo mismo, pero persistiendo el resultado en la base
-docker compose exec app php artisan pagos:unificar --source=excel --file=/var/www/html/storage/app/pagos.xlsx
+# Lo mismo, pero guardándolo como informe temporal de un usuario
+docker compose exec app php artisan pagos:unificar --source=excel --file=/var/www/html/storage/app/pagos.xlsx --user=ana@hospital.test
+
+# Borrar ya los informes vencidos (y todo pago sin informe vigente)
+docker compose exec app php artisan informes:purgar
 
 # Desde el endpoint del hospital en vez de Excel
 docker compose exec app php artisan pagos:unificar --source=endpoint --dry-run
@@ -235,7 +341,7 @@ Revisá que ambas filas (cobertura y Bono a Persona) tengan **exactamente** los 
 
 | | Nombre | GitHub | LinkedIn |
 |---|---|---|---|
-| <img src="https://github.com/BPalomba.png" width="48" style="border-radius:50%"> | Bruno Palombarini | [@BPalomba](https://github.com/BPalomba) | [LinkedIn](https://www.linkedin.com/in/bruno-palombarini-b43850285) |
+| <img src="https://github.com/BPalomba.png" width="48" style="border-radius:50%"> | Bruno Palombarini | [@BPalomba](https://github.com/BPalomba) | [LinkedIn](https://www.linkedin.com/in/bruno-palombarini-b43850285/) |
 | <img src="https://github.com/L-LopezMartin.png" width="48" style="border-radius:50%"> | Leandro Lopez | [@L-LopezMartin](https://github.com/L-LopezMartin) | [LinkedIn](https://www.linkedin.com/in/leandro-a-lopez-martin/) |
 | <img src="https://github.com/gaab2305.png" width="48" style="border-radius:50%"> | Gabriela Guzmán Muñoz | [@gaab2305](https://github.com/gaab2305) | [LinkedIn](https://www.linkedin.com/in/gabriela-guzm%C3%A1n-mu%C3%B1oz-09a99970/) |
 | <img src="https://github.com/EmilianoBarroso.png" width="48" style="border-radius:50%"> | Emiliano  Barroso | [@EmilianoBarroso](https://github.com/EmilianoBarroso) | [LinkedIn](https://www.linkedin.com/in/emiliano-agust%C3%ADn-barroso-verdejo/) |
